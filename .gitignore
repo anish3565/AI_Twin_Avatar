@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# local notes and editor/tool config
+CLAUDE.md
+.claude/
+HANDOFF.md
