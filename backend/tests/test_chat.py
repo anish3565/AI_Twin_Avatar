@@ -77,6 +77,22 @@ def test_chat_error_when_both_providers_fail(monkeypatch, saved):
     assert saved["messages"][0]["error_type"] == "RuntimeError"
 
 
+def test_system_prompt_requires_first_person():
+    from app.prompt import SYSTEM_PROMPT
+
+    assert "first person" in SYSTEM_PROMPT
+    assert "Never refer to Anish in the third person" in SYSTEM_PROMPT
+
+
+def test_build_messages_puts_knowledge_in_system_prompt():
+    from app.prompt import build_messages
+
+    messages = build_messages("Where are you based?", "## faq\nNew Delhi")
+    assert messages[0]["role"] == "system"
+    assert "## faq\nNew Delhi" in messages[0]["content"]
+    assert messages[1] == {"role": "user", "content": "Where are you based?"}
+
+
 def test_chat_rejects_empty_message(saved):
     client = TestClient(main.app)
     r = client.post("/chat", json={"session_id": "s1", "message": ""})
