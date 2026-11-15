@@ -6,7 +6,6 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "httpx",
-    "psycopg[binary]",
     "python-dotenv",
     "pydantic",
 ]

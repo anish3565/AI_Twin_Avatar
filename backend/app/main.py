@@ -1,27 +1,54 @@
 import os
-import time
 import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from . import db, llm
+from . import llm
+from .guard import (
+    BLOCKED_REPLY,
+    MAX_MESSAGE_CHARS,
+    SAFE_FALLBACK_REPLY,
+    clean_question,
+    looks_like_injection,
+    reply_is_safe,
+)
 from .prompt import UNKNOWN_TOKEN, build_messages, load_knowledge
+from .ratelimit import RateLimiter
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-MAX_QUESTION_CHARS = 1000
+MAX_BODY_BYTES = 4096
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+}
+chat_limiter = RateLimiter(limit=20, window_seconds=300)
 
-app = FastAPI(title="ThatMe API")
+app = FastAPI(title="ThatMe API", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",") if origin],
     allow_methods=["POST"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def harden(request: Request, call_next):
+    length = request.headers.get("content-length", "")
+    if length.isdigit() and int(length) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Request too large."}, status_code=413)
+    response = await call_next(request)
+    response.headers.update(SECURITY_HEADERS)
+    return response
 
 
 def contact_line() -> str:
@@ -31,17 +58,25 @@ def contact_line() -> str:
     return "You can reach Anish at " + " or ".join(options) + "."
 
 
-class SessionIn(BaseModel):
-    invite_code: str | None = None
-
-
-class SessionOut(BaseModel):
-    session_id: str
+def client_key(request: Request) -> str:
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if real_ip:
+        return real_ip
+    return request.client.host if request.client else "unknown"
 
 
 class ChatIn(BaseModel):
-    session_id: str
-    message: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+
+    @field_validator("message")
+    @classmethod
+    def sanitize(cls, value: str) -> str:
+        cleaned = clean_question(value)
+        if not cleaned:
+            raise ValueError("message is empty")
+        return cleaned
 
 
 class ChatOut(BaseModel):
@@ -50,54 +85,33 @@ class ChatOut(BaseModel):
     outcome: str
 
 
-@app.post("/session", response_model=SessionOut)
-def start_session(body: SessionIn, background: BackgroundTasks) -> SessionOut:
-    session_id = str(uuid.uuid4())
-    background.add_task(db.safe, db.create_session, session_id, body.invite_code)
-    return SessionOut(session_id=session_id)
-
-
 @app.post("/chat", response_model=ChatOut)
-async def chat(body: ChatIn, background: BackgroundTasks) -> ChatOut:
+async def chat(body: ChatIn, request: Request) -> ChatOut:
+    if not chat_limiter.allow(client_key(request)):
+        raise HTTPException(status_code=429, detail="Too many messages. Please try again in a few minutes.")
+
     message_id = str(uuid.uuid4())
-    started = time.perf_counter()
-    question = body.message.strip()
-    provider = model = None
-    prompt_tokens = completion_tokens = None
-    fallback_used = False
-    error_type = None
+    question = body.message
+
+    if looks_like_injection(question):
+        return ChatOut(message_id=message_id, reply=BLOCKED_REPLY, outcome="blocked")
 
     try:
         result = await llm.complete(build_messages(question, load_knowledge()))
-        provider, model = result.provider, result.model
-        prompt_tokens, completion_tokens = result.prompt_tokens, result.completion_tokens
-        fallback_used = result.fallback_used
-        if result.text.strip().upper().startswith(UNKNOWN_TOKEN):
-            outcome = "unknown"
-            reply = f"I don't have that information yet. {contact_line()}"
-        else:
-            outcome = "answered"
-            reply = result.text
-    except Exception as exc:
-        outcome = "error"
-        error_type = type(exc).__name__
-        reply = f"Sorry, I couldn't answer right now. {contact_line()}"
+    except Exception:
+        return ChatOut(
+            message_id=message_id,
+            reply=f"Sorry, I couldn't answer right now. {contact_line()}".strip(),
+            outcome="error",
+        )
 
-    total_ms = int((time.perf_counter() - started) * 1000)
-    background.add_task(
-        db.safe,
-        db.save_message,
-        message_id=message_id,
-        session_id=body.session_id,
-        question=question,
-        reply=reply,
-        outcome=outcome,
-        provider=provider,
-        model=model,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_ms=total_ms,
-        fallback_used=fallback_used,
-        error_type=error_type,
-    )
-    return ChatOut(message_id=message_id, reply=reply, outcome=outcome)
+    text = result.text.strip()
+    if text.upper().startswith(UNKNOWN_TOKEN):
+        return ChatOut(
+            message_id=message_id,
+            reply=f"I don't have that information yet. {contact_line()}".strip(),
+            outcome="unknown",
+        )
+    if not reply_is_safe(text):
+        return ChatOut(message_id=message_id, reply=SAFE_FALLBACK_REPLY, outcome="blocked")
+    return ChatOut(message_id=message_id, reply=text, outcome="answered")

@@ -1,7 +1,6 @@
 fastapi
 uvicorn
 httpx
-psycopg[binary]
 python-dotenv
 pydantic
 pytest
