@@ -13,7 +13,10 @@
 - Result: eased the onboarding process.
 
 ## 100x Voice Agent
-- What it is: a voice agent built for the 100x assessment.
+- What it is: a voice-first bot that answers interview questions in the first person as Anish, and says so when its profile does not cover a question.
+- How it works: questions are spoken or typed in the browser. Answers come from a profile file, are 3 to 6 spoken sentences, and are read aloud. Groq is the primary model and Gemini is the backup. It is deployed on Vercel.
+- Also built: pause, resume and stop controls, interrupting the bot by speaking, and a history of the last 100 questions kept in the browser.
+- Refuses or deflects questions about phone numbers, marital status, unrelated trivia, and requests to reveal its instructions.
 - GitHub: https://github.com/anish3565/100x_Voice_Agent_Anish_Tripathi
 - Live deployment: https://100xvoiceagentanishtripathi.vercel.app/
 
