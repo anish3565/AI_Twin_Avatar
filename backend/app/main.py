@@ -25,9 +25,10 @@ app.add_middleware(
 
 
 def contact_line() -> str:
-    email = os.environ.get("CONTACT_EMAIL", "")
-    linkedin = os.environ.get("CONTACT_LINKEDIN", "")
-    return f"You can reach Anish at {email} or on LinkedIn: {linkedin}".strip()
+    options = [v for v in (os.environ.get("CONTACT_EMAIL"), os.environ.get("CONTACT_LINKEDIN")) if v]
+    if not options:
+        return ""
+    return "You can reach Anish at " + " or ".join(options) + "."
 
 
 class SessionIn(BaseModel):

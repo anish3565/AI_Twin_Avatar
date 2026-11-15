@@ -19,7 +19,7 @@ class LLMResult:
 
 
 async def _groq(messages: list[dict]) -> LLMResult:
-    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
         r = await client.post(
             GROQ_URL,
@@ -40,7 +40,7 @@ async def _groq(messages: list[dict]) -> LLMResult:
 
 
 async def _gemini(messages: list[dict]) -> LLMResult:
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     system = "\n".join(m["content"] for m in messages if m["role"] == "system")
     user = "\n".join(m["content"] for m in messages if m["role"] == "user")
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
