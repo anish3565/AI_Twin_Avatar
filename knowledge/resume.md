@@ -8,10 +8,10 @@ AI/ML developer with 2 years of experience building MLOps pipelines, GenAI agent
 ### AI/ML Developer at Software Technology Parks of India (STPI), New Delhi
 - Dates: July 2024 - July 2026 (contract)
 - What I did:
-  - Sayuj Portal: built a recommendation system for 7,500+ users, raising engagement by 40%.
-  - Sayuj Portal: built dashboards tracking 10+ KPIs, cutting manual reporting by 30%.
-  - Ambud: built a rule-based chatbot on MySQL data for onboarding and recurring support queries, easing the onboarding process.
+  - Built a recommendation system for 7,500+ users, raising engagement by 40%.
+  - Built dashboards tracking 10+ KPIs, cutting manual reporting by 30%.
   - Analyzed platform metrics to support decisions.
+  - Built a rule-based chatbot on MySQL data for onboarding and recurring support queries.
 
 ### Intern at Centre for Development of Telematics (C-DOT)
 - Dates: June - July 2023
