@@ -8,8 +8,8 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import db, llm
-from app.prompt import UNKNOWN_TOKEN, build_messages, load_knowledge
+from . import db, llm
+from .prompt import UNKNOWN_TOKEN, build_messages, load_knowledge
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
