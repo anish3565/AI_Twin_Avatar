@@ -41,6 +41,11 @@ const orbWrap = document.getElementById("orb-wrap");
 const orb = document.getElementById("orb");
 const caption = document.getElementById("caption");
 const voiceNote = document.getElementById("voice-note");
+const modeChooser = document.getElementById("mode-chooser");
+const chooseVoice = document.getElementById("choose-voice");
+const chooseText = document.getElementById("choose-text");
+let voiceMode = false;
+let startVoice = null;
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canSpeak = "speechSynthesis" in window;
 
@@ -373,7 +378,7 @@ if (SpeechRecognitionAPI) {
   function setMic(on) {
     micOn = on;
     mic.classList.toggle("listening", on);
-    orbWrap.hidden = !on;
+    orbWrap.hidden = !on && !voiceMode;
     voiceNote.hidden = !on;
     caption.textContent = "";
     if (on) {
@@ -387,6 +392,8 @@ if (SpeechRecognitionAPI) {
   }
 
   mic.addEventListener("click", () => setMic(!micOn));
+  orb.addEventListener("click", () => voiceMode && setMic(!micOn));
+  startVoice = () => setMic(true);
   recognizer.addEventListener("start", () => {
     sessionNo++;
     seen.clear();
@@ -431,6 +438,7 @@ if (SpeechRecognitionAPI) {
   });
 } else {
   mic.hidden = true;
+  chooseVoice.disabled = true;
 }
 
 async function startSession() {
@@ -664,7 +672,20 @@ gate.addEventListener("submit", async (event) => {
   addMessage("Thanks, your details are saved. Ask me anything about my experience, projects or education.", "bot");
 });
 
-addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
-addMessage(CONSENT_PROMPT, "bot");
-flowStep = 0;
+function enterMode(mode) {
+  modeChooser.hidden = true;
+  voiceMode = mode === "voice";
+  document.body.classList.toggle("voice-mode", voiceMode);
+  if (voiceMode) {
+    readAloud.checked = true;
+    if (startVoice) startVoice();
+  }
+  addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
+  addMessage(CONSENT_PROMPT, "bot");
+  flowStep = 0;
+}
+
+chooseVoice.addEventListener("click", () => enterMode("voice"));
+chooseText.addEventListener("click", () => enterMode("text"));
+
 startSession().catch(() => addMessage("I couldn't connect. Please refresh and try again.", "error"));

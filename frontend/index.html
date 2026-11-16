@@ -38,8 +38,23 @@
     #gate-error { color: #a00; font-size: 0.9rem; margin: 0; }
     .row { display: flex; gap: 8px; justify-content: flex-end; }
     .row .secondary { background: transparent; color: inherit; border: 1px solid #aaa; }
+    .chooser { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; z-index: 3; }
+    .chooser-card { background: #fff; color: #111; width: 100%; max-width: 420px; border-radius: 10px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+    .chooser-card h2 { font-size: 1.05rem; margin: 0; }
+    .chooser-card p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
+    .chooser-card .choices { display: flex; gap: 8px; }
+    .chooser-card .choices button { flex: 1; }
+    .chooser-card .secondary { background: transparent; color: inherit; border: 1px solid #aaa; }
+    body.voice-mode h1, body.voice-mode #input, body.voice-mode #send, body.voice-mode .controls { display: none; }
+    body.voice-mode main { justify-content: center; }
+    body.voice-mode form.ask { flex: 1; flex-direction: column; align-items: center; justify-content: center; margin-top: 0; }
+    body.voice-mode .orb { width: 180px; height: 180px; cursor: pointer; }
+    body.voice-mode .caption { position: static; max-width: 80vw; margin-top: 16px; }
+    body.voice-mode #log { position: fixed; left: 16px; bottom: 16px; width: min(300px, 70vw); height: 28vh; flex: none; z-index: 1; padding: 8px; font-size: 0.85rem; }
     @media (prefers-color-scheme: dark) {
       body { background: #111; color: #eee; }
+      .chooser-card { background: #1b1b1d; color: #eee; }
+      .chooser-card .secondary { color: #eee; border-color: #666; }
       #log { background: #1b1b1d; border-color: #333; }
       .msg.user { color: #bbb; }
       .notice { color: #999; }
@@ -52,6 +67,16 @@
   </style>
 </head>
 <body>
+  <div id="mode-chooser" class="chooser">
+    <div class="chooser-card" role="dialog" aria-labelledby="chooser-title">
+      <h2 id="chooser-title">How would you like to chat?</h2>
+      <p>Talk uses your microphone and reads replies aloud. Voice works best in Chrome or Edge.</p>
+      <div class="choices">
+        <button type="button" id="choose-voice">Talk</button>
+        <button type="button" id="choose-text" class="secondary">Type</button>
+      </div>
+    </div>
+  </div>
   <main>
     <h1>Chat with Anish's AI Twin</h1>
     <div id="log" aria-live="polite"></div>
