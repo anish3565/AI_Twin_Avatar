@@ -96,6 +96,10 @@ function chunkForSpeech(text) {
   return chunks;
 }
 
+function estimatedSpeechMs(chunks) {
+  return Math.max(3000, chunks.join(" ").length * 80) + 3000;
+}
+
 function pickVoice() {
   const english = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
   voice =
@@ -122,6 +126,12 @@ function speakText(text) {
   lastSpokenWords = new Set(wordsOf(text));
   botSpeaking = true;
   pendingChunks = chunks.length;
+  const markDone = () => {
+    if (token !== speechToken) return;
+    botSpeaking = false;
+    speechEndedAt = performance.now();
+  };
+  setTimeout(markDone, estimatedSpeechMs(chunks) + ECHO_TAIL_MS);
   for (const chunk of chunks) {
     const utterance = new SpeechSynthesisUtterance(chunk);
     if (voice) utterance.voice = voice;
@@ -129,11 +139,7 @@ function speakText(text) {
       if (token !== speechToken) return;
       pendingChunks--;
       if (pendingChunks > 0) return;
-      setTimeout(() => {
-        if (token !== speechToken) return;
-        botSpeaking = false;
-        speechEndedAt = performance.now();
-      }, ECHO_TAIL_MS);
+      setTimeout(markDone, ECHO_TAIL_MS);
     };
     utterance.onend = finish;
     utterance.onerror = finish;
@@ -187,7 +193,7 @@ async function startLevelMeter() {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
     });
   } catch (err) {
     return;
@@ -236,10 +242,10 @@ let pendingVoiceSend = "";
 
 function isEcho(transcript) {
   if (performance.now() - speechEndedAt > ECHO_WINDOW_MS) return false;
-  const words = wordsOf(transcript);
+  const words = wordsOf(transcript).filter((word) => word.length > 3);
   if (words.length < 3) return false;
   const hits = words.filter((word) => lastSpokenWords.has(word)).length;
-  return hits / words.length >= 0.7;
+  return hits / words.length >= 0.8;
 }
 
 function commitUtterance() {
@@ -304,9 +310,12 @@ if (SpeechRecognitionAPI) {
   }
 
   mic.addEventListener("click", () => setMic(!micOn));
-  recognizer.addEventListener("start", () => sessionNo++);
+  recognizer.addEventListener("start", () => {
+    sessionNo++;
+    seen.clear();
+  });
   recognizer.addEventListener("end", () => {
-    if (micOn) setTimeout(() => micOn && startRecognizer(), 300);
+    if (micOn) setTimeout(() => micOn && startRecognizer(), 100);
   });
   recognizer.addEventListener("error", (event) => {
     if (event.error === "no-speech" || event.error === "aborted") return;
