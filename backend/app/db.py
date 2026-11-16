@@ -10,26 +10,36 @@ def _connect():
     return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
-def create_session(session_id: str, invite_code: str | None, visitor: dict) -> None:
+def create_session(session_id: str, invite_code: str | None) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """
+            insert into sessions (id, invite_code)
+            values (%s, (select code from invite_links where code = %s))
+            """,
+            (session_id, invite_code),
+        )
+
+
+def link_visitor(session_id: str, visitor: dict) -> None:
     with _connect() as conn:
         visitor_id = conn.execute(
             """
-            insert into visitors (name, email, company, role, linkedin_url, consent_at)
-            values (%s, %s, %s, %s, %s, now())
+            insert into visitors (name, email, company, role, hiring_for, linkedin_url, consent_at)
+            values (%s, %s, %s, %s, %s, %s, now())
             returning id
             """,
             (
-                visitor["name"], visitor["email"], visitor["company"],
-                visitor.get("role"), visitor.get("linkedin_url"),
+                visitor["name"], visitor.get("email"), visitor["company"], visitor["role"],
+                visitor["hiring_for"], visitor.get("linkedin_url"),
             ),
         ).fetchone()[0]
-        conn.execute(
-            """
-            insert into sessions (id, visitor_id, invite_code)
-            values (%s, %s, (select code from invite_links where code = %s))
-            """,
-            (session_id, visitor_id, invite_code),
-        )
+        linked = conn.execute(
+            "update sessions set visitor_id = %s where id = %s and visitor_id is null returning id",
+            (visitor_id, session_id),
+        ).fetchone()
+        if linked is None:
+            raise LookupError("session not found or already linked")
 
 
 def save_message(
