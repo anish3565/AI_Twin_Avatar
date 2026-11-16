@@ -379,6 +379,7 @@ if (SpeechRecognitionAPI) {
     micOn = on;
     mic.classList.toggle("listening", on);
     orbWrap.hidden = !on && !voiceMode;
+    if (voiceMode) mic.textContent = on ? "Stop mic" : "Start mic";
     voiceNote.hidden = !on;
     caption.textContent = "";
     if (on) {
