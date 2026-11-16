@@ -21,9 +21,10 @@ def env(monkeypatch):
 
 @pytest.fixture
 def saved(monkeypatch):
-    calls = {"messages": [], "sessions": []}
+    calls = {"messages": [], "sessions": [], "visitors": []}
     monkeypatch.setattr(db, "save_message", lambda **kw: calls["messages"].append(kw))
-    monkeypatch.setattr(db, "create_session", lambda sid, code, visitor: calls["sessions"].append((sid, code, visitor)))
+    monkeypatch.setattr(db, "create_session", lambda sid, code: calls["sessions"].append((sid, code)))
+    monkeypatch.setattr(db, "link_visitor", lambda sid, visitor: calls["visitors"].append((sid, visitor)))
     return calls
 
 
@@ -113,40 +114,88 @@ def test_overlong_reply_is_replaced(monkeypatch, client):
 
 
 VISITOR = {
+    "session_id": SESSION_ID,
     "name": "Asha Rao",
     "email": "asha@example.com",
     "company": "Acme",
     "role": "Recruiter",
+    "hiring_for": "Backend Engineer",
     "linkedin_url": "https://www.linkedin.com/in/asha",
     "consent": True,
 }
 
 
-def test_session_creates_and_logs(client, saved):
-    r = client.post("/session", json=VISITOR)
+def test_session_creates_without_visitor(client, saved):
+    r = client.post("/session", json={})
     assert r.status_code == 200
-    sid, code, visitor = saved["sessions"][0]
+    sid, code = saved["sessions"][0]
     assert sid == r.json()["session_id"]
     assert code is None
-    assert visitor == {k: v for k, v in VISITOR.items() if k != "consent"}
 
 
-def test_session_requires_consent(client, saved):
-    r = client.post("/session", json={**VISITOR, "consent": False})
+def test_session_rejects_visitor_fields(client, saved):
+    r = client.post("/session", json=VISITOR)
     assert r.status_code == 422
     assert saved["sessions"] == []
 
 
-def test_session_requires_company_and_valid_email(client, saved):
-    assert client.post("/session", json={**VISITOR, "company": "  "}).status_code == 422
-    assert client.post("/session", json={**VISITOR, "email": "not-an-email"}).status_code == 422
-    assert saved["sessions"] == []
+def test_visitor_links_session(client, saved):
+    r = client.post("/visitor", json=VISITOR)
+    assert r.status_code == 200
+    assert r.json() == {"saved": True}
+    sid, visitor = saved["visitors"][0]
+    assert sid == SESSION_ID
+    assert visitor == {k: v for k, v in VISITOR.items() if k not in ("consent", "session_id")}
 
 
-def test_session_rejects_non_linkedin_url(client, saved):
-    r = client.post("/session", json={**VISITOR, "linkedin_url": "https://evil.example.com/x"})
+def test_visitor_requires_consent(client, saved):
+    r = client.post("/visitor", json={**VISITOR, "consent": False})
     assert r.status_code == 422
-    assert saved["sessions"] == []
+    assert saved["visitors"] == []
+
+
+def test_visitor_requires_hiring_for(client, saved):
+    body = {k: v for k, v in VISITOR.items() if k != "hiring_for"}
+    assert client.post("/visitor", json=body).status_code == 422
+    assert saved["visitors"] == []
+
+
+def test_visitor_requires_company_and_valid_email(client, saved):
+    assert client.post("/visitor", json={**VISITOR, "company": "  "}).status_code == 422
+    assert client.post("/visitor", json={**VISITOR, "email": "not-an-email"}).status_code == 422
+    assert saved["visitors"] == []
+
+
+def test_visitor_rejects_non_linkedin_url(client, saved):
+    r = client.post("/visitor", json={**VISITOR, "linkedin_url": "https://evil.example.com/x"})
+    assert r.status_code == 422
+    assert saved["visitors"] == []
+
+
+def test_visitor_optional_fields_may_be_omitted(client, saved):
+    body = {k: v for k, v in VISITOR.items() if k not in ("email", "linkedin_url")}
+    assert client.post("/visitor", json=body).status_code == 200
+    _, visitor = saved["visitors"][0]
+    assert visitor["email"] is None
+    assert visitor["linkedin_url"] is None
+
+
+def test_visitor_unknown_session_returns_404(monkeypatch, client):
+    def missing(sid, visitor):
+        raise LookupError("session not found or already linked")
+
+    monkeypatch.setattr(db, "link_visitor", missing)
+    assert client.post("/visitor", json=VISITOR).status_code == 404
+
+
+def test_visitor_database_failure_returns_503(monkeypatch, client):
+    def broken(sid, visitor):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(db, "link_visitor", broken)
+    r = client.post("/visitor", json=VISITOR)
+    assert r.status_code == 503
+    assert "connection refused" not in r.text
 
 
 def test_chat_stores_question_and_outcome(monkeypatch, client, saved):

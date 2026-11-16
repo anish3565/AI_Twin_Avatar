@@ -71,15 +71,26 @@ def client_key(request: Request) -> str:
 class SessionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=120)
-    email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-    company: str = Field(min_length=1, max_length=120)
-    role: str | None = Field(default=None, max_length=120)
-    linkedin_url: str | None = Field(default=None, max_length=300, pattern=r"^https://(www\.)?linkedin\.com/\S*$")
     invite_code: str | None = Field(default=None, max_length=64)
+
+
+class SessionOut(BaseModel):
+    session_id: str
+
+
+class VisitorIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    name: str = Field(min_length=1, max_length=120)
+    company: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=120)
+    hiring_for: str = Field(min_length=1, max_length=120)
+    email: str | None = Field(default=None, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    linkedin_url: str | None = Field(default=None, max_length=300, pattern=r"^https://(www\.)?linkedin\.com/\S*$")
     consent: Literal[True]
 
-    @field_validator("name", "company")
+    @field_validator("name", "company", "role", "hiring_for")
     @classmethod
     def clean_required(cls, value: str) -> str:
         cleaned = clean_question(value)
@@ -87,19 +98,14 @@ class SessionIn(BaseModel):
             raise ValueError("field is empty")
         return cleaned
 
-    @field_validator("role")
-    @classmethod
-    def clean_optional(cls, value: str | None) -> str | None:
-        return (clean_question(value) or None) if value else None
-
     @field_validator("email", "linkedin_url")
     @classmethod
     def strip(cls, value: str | None) -> str | None:
         return value.strip() if value else None
 
 
-class SessionOut(BaseModel):
-    session_id: str
+class VisitorOut(BaseModel):
+    saved: bool
 
 
 class ChatIn(BaseModel):
@@ -128,9 +134,22 @@ def start_session(body: SessionIn, request: Request, background: BackgroundTasks
     if not session_limiter.allow(client_key(request)):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
     session_id = str(uuid.uuid4())
-    visitor = body.model_dump(include={"name", "email", "company", "role", "linkedin_url"})
-    background.add_task(db.safe, db.create_session, session_id, body.invite_code, visitor)
+    background.add_task(db.safe, db.create_session, session_id, body.invite_code)
     return SessionOut(session_id=session_id)
+
+
+@app.post("/visitor", response_model=VisitorOut)
+def save_visitor(body: VisitorIn, request: Request) -> VisitorOut:
+    if not session_limiter.allow(client_key(request)):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+    visitor = body.model_dump(include={"name", "email", "company", "role", "hiring_for", "linkedin_url"})
+    try:
+        db.link_visitor(body.session_id, visitor)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not save your details. Please try again.")
+    return VisitorOut(saved=True)
 
 
 @app.post("/chat", response_model=ChatOut)

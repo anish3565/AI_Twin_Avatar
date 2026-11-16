@@ -15,6 +15,7 @@ create table if not exists visitors (
     email         text,
     company       text,
     role          text,
+    hiring_for    text,
     linkedin_url  text,
     consent_at    timestamptz not null,
     created_at    timestamptz not null default now()

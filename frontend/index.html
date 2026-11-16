@@ -7,58 +7,77 @@
   <style>
     :root { color-scheme: light dark; }
     body { margin: 0; font-family: system-ui, sans-serif; background: #f6f6f7; color: #111; }
+    [hidden] { display: none !important; }
     main { max-width: 720px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; }
     h1 { font-size: 1.1rem; margin: 0 0 12px; }
     #log { flex: 1; overflow-y: auto; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
     .msg { margin: 0 0 12px; line-height: 1.45; white-space: pre-wrap; }
     .msg.user { text-align: right; color: #444; }
     .msg.error { color: #a00; }
-    form { display: flex; gap: 8px; margin-top: 12px; }
+    form.ask { display: flex; gap: 8px; margin-top: 12px; }
     input { flex: 1; padding: 10px; font: inherit; border: 1px solid #bbb; border-radius: 6px; }
     button { padding: 10px 16px; font: inherit; border: 0; border-radius: 6px; background: #111; color: #fff; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: default; }
-    [hidden] { display: none !important; }
-    #gate { max-width: 480px; margin: 40px auto; display: flex; flex-direction: column; gap: 10px; }
+    .notice { font-size: 0.8rem; color: #666; margin: 8px 0 0; }
+    #details-btn { position: fixed; right: 16px; bottom: 16px; z-index: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; z-index: 2; }
+    #gate { background: #fff; color: #111; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; border-radius: 10px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+    #gate h2 { font-size: 1.05rem; margin: 0; }
+    #gate p { margin: 0; font-size: 0.9rem; line-height: 1.4; }
     #gate label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
     #gate .consent { flex-direction: row; align-items: flex-start; gap: 8px; }
     #gate small { color: #666; }
     #gate-error { color: #a00; font-size: 0.9rem; margin: 0; }
+    .row { display: flex; gap: 8px; justify-content: flex-end; }
+    .row .secondary { background: transparent; color: inherit; border: 1px solid #aaa; }
     @media (prefers-color-scheme: dark) {
       body { background: #111; color: #eee; }
-      #gate small { color: #aaa; }
       #log { background: #1b1b1d; border-color: #333; }
       .msg.user { color: #bbb; }
+      .notice { color: #999; }
       input { background: #1b1b1d; color: #eee; border-color: #444; }
       button { background: #eee; color: #111; }
+      #gate { background: #1b1b1d; color: #eee; }
+      #gate small { color: #aaa; }
+      .row .secondary { color: #eee; border-color: #666; }
     }
   </style>
 </head>
 <body>
   <main>
+    <h1>Chat with Anish's AI Twin</h1>
+    <div id="log" aria-live="polite"></div>
+    <form id="ask-form" class="ask">
+      <input id="input" type="text" maxlength="1000" placeholder="Ask about experience, projects, education..." autocomplete="off" required>
+      <button id="send" type="submit">Send</button>
+    </form>
+    <p class="notice">Conversations may be stored and used for analytics.</p>
+  </main>
+
+  <button id="details-btn" type="button">Share your details</button>
+
+  <div id="overlay" hidden>
     <form id="gate" novalidate>
-      <h1>Before we chat</h1>
-      <p>Tell me a little about yourself. I store these details with your chat so Anish can follow up.</p>
+      <h2>Share your details</h2>
+      <p>I'd like to know who I'm talking to. Anish can follow up with you about the role.</p>
       <label>Name <input name="name" type="text" maxlength="120" required autocomplete="name"></label>
-      <label>Email <input name="email" type="email" maxlength="254" required autocomplete="email"></label>
       <label>Company <input name="company" type="text" maxlength="120" required autocomplete="organization"></label>
-      <label>Role (optional) <input name="role" type="text" maxlength="120" autocomplete="organization-title"></label>
+      <label>Your role <input name="role" type="text" maxlength="120" required></label>
+      <label>Role you are hiring for <input name="hiring_for" type="text" maxlength="120" required></label>
+      <label>Email (optional) <input name="email" type="email" maxlength="254" autocomplete="email"></label>
       <label>LinkedIn URL (optional) <input name="linkedin_url" type="url" maxlength="300" placeholder="https://linkedin.com/in/..."></label>
       <label class="consent">
         <input name="consent" type="checkbox" required>
-        <span>I agree that Anish may store my name, email, company, role and LinkedIn URL along with my chat questions, and contact me about them. I can ask for this to be deleted at any time.</span>
+        <span>I agree that this chat and the details above may be stored and used for analytics, and that Anish may contact me about the role.</span>
       </label>
       <p id="gate-error" hidden></p>
-      <button type="submit">Start chat</button>
+      <div class="row">
+        <button type="button" class="secondary" id="gate-cancel">Not now</button>
+        <button type="submit" id="gate-submit">Save and close</button>
+      </div>
     </form>
-    <div id="chat" hidden>
-      <h1>Chat with Anish's AI Twin</h1>
-      <div id="log" aria-live="polite"></div>
-      <form id="form">
-        <input id="input" type="text" maxlength="1000" placeholder="Ask about experience, projects, education..." autocomplete="off" required>
-        <button id="send" type="submit">Send</button>
-      </form>
-    </div>
-  </main>
+  </div>
+
   <script src="js/chat.js"></script>
 </body>
 </html>
