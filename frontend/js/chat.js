@@ -27,6 +27,8 @@ const answers = {};
 
 const readAloud = document.getElementById("read-aloud");
 const mic = document.getElementById("mic");
+const orbWrap = document.getElementById("orb-wrap");
+const orb = document.getElementById("orb");
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canSpeak = "speechSynthesis" in window;
 
@@ -50,6 +52,59 @@ readAloud.addEventListener("change", () => {
   if (!readAloud.checked && canSpeak) speechSynthesis.cancel();
 });
 
+const MAX_FAILURES = 3;
+let meter = null;
+let meterWanted = false;
+
+function setLevel(level) {
+  orb.style.setProperty("--level", level.toFixed(3));
+}
+
+async function startLevelMeter() {
+  meterWanted = true;
+  if (!navigator.mediaDevices || !window.AudioContext) return;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    return;
+  }
+  if (!meterWanted) {
+    stream.getTracks().forEach((track) => track.stop());
+    return;
+  }
+  const context = new AudioContext();
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 512;
+  context.createMediaStreamSource(stream).connect(analyser);
+  const samples = new Uint8Array(analyser.fftSize);
+  meter = { stream, context, frame: 0 };
+  let level = 0;
+  const tick = () => {
+    analyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (const sample of samples) {
+      const value = (sample - 128) / 128;
+      sum += value * value;
+    }
+    const rms = Math.sqrt(sum / samples.length);
+    level = level * 0.75 + Math.min(1, rms * 5) * 0.25;
+    setLevel(level);
+    meter.frame = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function stopLevelMeter() {
+  meterWanted = false;
+  setLevel(0);
+  if (!meter) return;
+  cancelAnimationFrame(meter.frame);
+  meter.stream.getTracks().forEach((track) => track.stop());
+  meter.context.close();
+  meter = null;
+}
+
 if (SpeechRecognitionAPI) {
   const recognizer = new SpeechRecognitionAPI();
   recognizer.lang = "en-US";
@@ -57,26 +112,50 @@ if (SpeechRecognitionAPI) {
   recognizer.interimResults = false;
   recognizer.maxAlternatives = 1;
   let micOn = false;
+  let failures = 0;
   mic.hidden = false;
-  mic.addEventListener("click", () => {
-    micOn = !micOn;
-    if (micOn) {
+
+  function startRecognizer() {
+    try {
       recognizer.start();
+    } catch (err) {
+      // already running
+    }
+  }
+
+  function setMic(on) {
+    micOn = on;
+    mic.classList.toggle("listening", on);
+    orbWrap.hidden = !on;
+    if (on) {
+      failures = 0;
+      startRecognizer();
+      startLevelMeter();
     } else {
       recognizer.stop();
+      stopLevelMeter();
     }
-  });
-  recognizer.addEventListener("start", () => mic.classList.add("listening"));
+  }
+
+  mic.addEventListener("click", () => setMic(!micOn));
   recognizer.addEventListener("end", () => {
-    mic.classList.remove("listening");
-    if (micOn) recognizer.start();
+    if (micOn) setTimeout(() => micOn && startRecognizer(), 300);
   });
   recognizer.addEventListener("error", (event) => {
     if (event.error === "no-speech" || event.error === "aborted") return;
-    micOn = false;
-    addMessage("I couldn't use the microphone. Please check permission or type your question.", "error");
+    if (event.error === "not-allowed" || event.error === "service-not-allowed" || event.error === "audio-capture") {
+      if (micOn) addMessage("I couldn't use the microphone. Please check permission or type your question.", "error");
+      setMic(false);
+      return;
+    }
+    failures++;
+    if (failures >= MAX_FAILURES) {
+      setMic(false);
+      addMessage("The microphone stopped working. Please try again or type your question.", "error");
+    }
   });
   recognizer.addEventListener("result", (event) => {
+    failures = 0;
     for (let i = event.resultIndex; i < event.results.length; i++) {
       if (!event.results[i].isFinal || sendButton.disabled) continue;
       const transcript = event.results[i][0].transcript.trim();
@@ -85,6 +164,8 @@ if (SpeechRecognitionAPI) {
       askForm.requestSubmit();
     }
   });
+} else {
+  mic.hidden = true;
 }
 
 async function startSession() {
