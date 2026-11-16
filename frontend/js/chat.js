@@ -106,13 +106,32 @@ function estimatedSpeechMs(chunks) {
   return speechBudgetMs(chunks.join(" ").length);
 }
 
+const VOICE_PREFERENCE = [
+  /Microsoft (Aria|Jenny|Guy|Libby|Sonia|Ryan).*Natural/i,
+  /Google UK English Female/i,
+  /Google US English/i,
+  /Samantha/i,
+  /Daniel/i,
+];
+const SPEECH_RATE = 0.95;
+
 function pickVoice() {
   const english = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
-  voice =
-    english.find((v) => v.localService && /natural|aria|jenny|samantha|daniel|zira/i.test(v.name)) ||
-    english.find((v) => v.localService) ||
-    english[0] ||
-    null;
+  for (const pattern of VOICE_PREFERENCE) {
+    const match = english.find((v) => pattern.test(v.name));
+    if (match) {
+      voice = match;
+      return;
+    }
+  }
+  voice = english.find((v) => v.localService) || english[0] || null;
+}
+
+function newUtterance(chunk) {
+  const utterance = new SpeechSynthesisUtterance(chunk);
+  if (voice) utterance.voice = voice;
+  utterance.rate = SPEECH_RATE;
+  return utterance;
 }
 
 function stopSpeaking() {
@@ -139,8 +158,7 @@ function speakText(text) {
   };
   setTimeout(markDone, estimatedSpeechMs(chunks) + ECHO_TAIL_MS);
   for (const chunk of chunks) {
-    const utterance = new SpeechSynthesisUtterance(chunk);
-    if (voice) utterance.voice = voice;
+    const utterance = newUtterance(chunk);
     const finish = () => {
       if (token !== speechToken) return;
       pendingChunks--;
@@ -174,8 +192,7 @@ function speakAppend(speech, text) {
   speech.watchdog = setTimeout(() => markSpeechDone(speech), speechBudgetMs(speech.chars) + ECHO_TAIL_MS);
   for (const chunk of chunkForSpeech(sanitizeForSpeech(text))) {
     pendingChunks++;
-    const utterance = new SpeechSynthesisUtterance(chunk);
-    if (voice) utterance.voice = voice;
+    const utterance = newUtterance(chunk);
     const finish = () => {
       if (speech.token !== speechToken) return;
       pendingChunks--;
