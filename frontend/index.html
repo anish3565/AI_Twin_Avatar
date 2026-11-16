@@ -22,6 +22,9 @@
     .controls { font-size: 0.85rem; margin-top: 8px; }
     .controls label { display: inline-flex; gap: 6px; align-items: center; }
     button.icon.listening { background: #a00; color: #fff; }
+    .orb-wrap { display: flex; flex-direction: column; align-items: center; padding: 20px 0 0; margin: 0 0 4px; }
+    .orb { width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8fd0ff, #3778e8); transform: scale(calc(1 + var(--level, 0) * 0.6)); box-shadow: 0 0 calc(var(--level, 0) * 36px) calc(var(--level, 0) * 12px) rgba(55, 120, 232, 0.45); transition: transform 90ms linear, box-shadow 90ms linear; }
+    .orb-label { font-size: 0.8rem; opacity: 0.7; margin-top: 24px; }
     #details-btn { position: fixed; right: 16px; bottom: 16px; z-index: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
     #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; z-index: 2; }
     #gate { background: #fff; color: #111; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; border-radius: 10px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
@@ -50,6 +53,10 @@
   <main>
     <h1>Chat with Anish's AI Twin</h1>
     <div id="log" aria-live="polite"></div>
+    <div id="orb-wrap" class="orb-wrap" hidden>
+      <div id="orb" class="orb" aria-hidden="true"></div>
+      <span class="orb-label">Listening...</span>
+    </div>
     <form id="ask-form" class="ask">
       <input id="input" type="text" maxlength="1000" placeholder="Ask about experience, projects, education..." autocomplete="off" required>
       <button id="mic" type="button" class="icon" aria-label="Speak your question" hidden>Mic</button>
