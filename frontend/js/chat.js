@@ -28,6 +28,7 @@ const COMMIT_MS = 600;
 const BARGE_LEVEL = 0.35;
 const BARGE_MS = 250;
 const MAX_FAILURES = 3;
+const INTERRUPT_MIN_WORDS = 3;
 
 let sessionId = null;
 let detailsSaved = false;
@@ -249,6 +250,14 @@ function isEcho(transcript) {
   return hits / words.length >= 0.8;
 }
 
+function isInterruption(transcript) {
+  if (!botSpeaking) return false;
+  const words = wordsOf(transcript);
+  if (words.length < INTERRUPT_MIN_WORDS) return false;
+  const hits = words.filter((word) => lastSpokenWords.has(word)).length;
+  return hits / words.length < 0.8;
+}
+
 function commitUtterance() {
   commitTimer = null;
   const text = utterance.trim();
@@ -341,6 +350,7 @@ if (SpeechRecognitionAPI) {
       const result = event.results[i];
       if (!result.isFinal) {
         interimText = result[0].transcript.trim();
+        if (isInterruption(interimText)) stopSpeaking();
         continue;
       }
       const key = sessionNo + ":" + i;
