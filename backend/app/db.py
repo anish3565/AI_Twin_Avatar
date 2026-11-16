@@ -10,14 +10,25 @@ def _connect():
     return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
 
 
-def create_session(session_id: str, invite_code: str | None) -> None:
+def create_session(session_id: str, invite_code: str | None, visitor: dict) -> None:
     with _connect() as conn:
+        visitor_id = conn.execute(
+            """
+            insert into visitors (name, email, company, role, linkedin_url, consent_at)
+            values (%s, %s, %s, %s, %s, now())
+            returning id
+            """,
+            (
+                visitor["name"], visitor["email"], visitor["company"],
+                visitor.get("role"), visitor.get("linkedin_url"),
+            ),
+        ).fetchone()[0]
         conn.execute(
             """
-            insert into sessions (id, invite_code)
-            values (%s, (select code from invite_links where code = %s))
+            insert into sessions (id, visitor_id, invite_code)
+            values (%s, %s, (select code from invite_links where code = %s))
             """,
-            (session_id, invite_code),
+            (session_id, visitor_id, invite_code),
         )
 
 
