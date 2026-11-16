@@ -22,10 +22,10 @@
     .controls { font-size: 0.85rem; margin-top: 8px; }
     .controls label { display: inline-flex; gap: 6px; align-items: center; }
     button.icon.listening { background: #a00; color: #fff; }
-    .orb-wrap { display: flex; flex-direction: column; align-items: center; padding: 20px 0 0; margin: 0 0 4px; }
-    .orb { width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8fd0ff, #3778e8); transform: scale(calc(1 + var(--level, 0) * 0.6)); box-shadow: 0 0 calc(var(--level, 0) * 36px) calc(var(--level, 0) * 12px) rgba(55, 120, 232, 0.45); transition: transform 90ms linear, box-shadow 90ms linear; }
-    .orb-label { font-size: 0.8rem; opacity: 0.7; margin-top: 24px; }
-    .caption { font-size: 0.9rem; min-height: 1.2em; margin: 6px 0 0; opacity: 0.8; text-align: center; }
+    .orb-wrap { position: relative; display: flex; align-items: center; }
+    .orb { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8fd0ff, #3778e8); transform: scale(calc(1 + var(--level, 0) * 0.6)); box-shadow: 0 0 calc(var(--level, 0) * 36px) calc(var(--level, 0) * 12px) rgba(55, 120, 232, 0.45); transition: transform 90ms linear, box-shadow 90ms linear; }
+    .caption { position: absolute; right: 0; bottom: calc(100% + 8px); max-width: 60vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; padding: 4px 8px; font-size: 0.8rem; background: Canvas; color: CanvasText; border: 1px solid #bbb; border-radius: 6px; }
+    .caption:empty { display: none; }
     .msg.thinking { color: #888; font-style: italic; }
     #details-btn { position: fixed; right: 16px; bottom: 16px; z-index: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
     #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; z-index: 2; }
@@ -55,15 +55,14 @@
   <main>
     <h1>Chat with Anish's AI Twin</h1>
     <div id="log" aria-live="polite"></div>
-    <div id="orb-wrap" class="orb-wrap" hidden>
-      <div id="orb" class="orb" aria-hidden="true"></div>
-      <span class="orb-label">Listening...</span>
-      <p id="caption" class="caption" aria-live="polite"></p>
-    </div>
     <form id="ask-form" class="ask">
       <input id="input" type="text" maxlength="1000" placeholder="Ask about experience, projects, education..." autocomplete="off" required>
       <button id="mic" type="button" class="icon" aria-label="Speak your question" hidden>Mic</button>
       <button id="send" type="submit">Send</button>
+      <div id="orb-wrap" class="orb-wrap" hidden>
+        <div id="orb" class="orb" role="img" aria-label="Listening"></div>
+        <p id="caption" class="caption" aria-live="polite"></p>
+      </div>
     </form>
     <div class="controls">
       <label><input id="read-aloud" type="checkbox" checked> Read replies aloud</label>
