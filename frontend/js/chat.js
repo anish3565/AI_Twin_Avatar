@@ -154,6 +154,9 @@ if (SpeechRecognitionAPI) {
       addMessage("The microphone stopped working. Please try again or type your question.", "error");
     }
   });
+  recognizer.addEventListener("speechstart", () => {
+    if (canSpeak) speechSynthesis.cancel();
+  });
   recognizer.addEventListener("result", (event) => {
     failures = 0;
     for (let i = event.resultIndex; i < event.results.length; i++) {
