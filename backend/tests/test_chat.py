@@ -23,7 +23,7 @@ def env(monkeypatch):
 def saved(monkeypatch):
     calls = {"messages": [], "sessions": []}
     monkeypatch.setattr(db, "save_message", lambda **kw: calls["messages"].append(kw))
-    monkeypatch.setattr(db, "create_session", lambda sid, code: calls["sessions"].append((sid, code)))
+    monkeypatch.setattr(db, "create_session", lambda sid, code, visitor: calls["sessions"].append((sid, code, visitor)))
     return calls
 
 
@@ -112,10 +112,41 @@ def test_overlong_reply_is_replaced(monkeypatch, client):
     assert body["outcome"] == "refused"
 
 
+VISITOR = {
+    "name": "Asha Rao",
+    "email": "asha@example.com",
+    "company": "Acme",
+    "role": "Recruiter",
+    "linkedin_url": "https://www.linkedin.com/in/asha",
+    "consent": True,
+}
+
+
 def test_session_creates_and_logs(client, saved):
-    r = client.post("/session", json={"invite_code": None})
+    r = client.post("/session", json=VISITOR)
     assert r.status_code == 200
-    assert saved["sessions"] == [(r.json()["session_id"], None)]
+    sid, code, visitor = saved["sessions"][0]
+    assert sid == r.json()["session_id"]
+    assert code is None
+    assert visitor == {k: v for k, v in VISITOR.items() if k != "consent"}
+
+
+def test_session_requires_consent(client, saved):
+    r = client.post("/session", json={**VISITOR, "consent": False})
+    assert r.status_code == 422
+    assert saved["sessions"] == []
+
+
+def test_session_requires_company_and_valid_email(client, saved):
+    assert client.post("/session", json={**VISITOR, "company": "  "}).status_code == 422
+    assert client.post("/session", json={**VISITOR, "email": "not-an-email"}).status_code == 422
+    assert saved["sessions"] == []
+
+
+def test_session_rejects_non_linkedin_url(client, saved):
+    r = client.post("/session", json={**VISITOR, "linkedin_url": "https://evil.example.com/x"})
+    assert r.status_code == 422
+    assert saved["sessions"] == []
 
 
 def test_chat_stores_question_and_outcome(monkeypatch, client, saved):

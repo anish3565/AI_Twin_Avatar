@@ -1,5 +1,8 @@
 const API_BASE = "https://thatme.vercel.app";
 
+const gate = document.getElementById("gate");
+const gateError = document.getElementById("gate-error");
+const chat = document.getElementById("chat");
 const log = document.getElementById("log");
 const form = document.getElementById("form");
 const input = document.getElementById("input");
@@ -15,28 +18,58 @@ function addMessage(text, kind) {
 
 let sessionId = null;
 
-async function ensureSession() {
-  if (sessionId) return sessionId;
+async function startSession(visitor) {
   const res = await fetch(API_BASE + "/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ invite_code: null }),
+    body: JSON.stringify({ ...visitor, invite_code: null }),
   });
   if (!res.ok) throw new Error("session " + res.status);
   sessionId = (await res.json()).session_id;
-  return sessionId;
 }
 
 async function ask(message) {
-  const id = await ensureSession();
   const res = await fetch(API_BASE + "/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: id, message }),
+    body: JSON.stringify({ session_id: sessionId, message }),
   });
   if (!res.ok) throw new Error("chat " + res.status);
   return (await res.json()).reply;
 }
+
+gate.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  gateError.hidden = true;
+  const data = new FormData(gate);
+  const visitor = {
+    name: data.get("name").trim(),
+    email: data.get("email").trim(),
+    company: data.get("company").trim(),
+    role: data.get("role").trim() || null,
+    linkedin_url: data.get("linkedin_url").trim() || null,
+    consent: data.get("consent") === "on",
+  };
+  if (!gate.checkValidity()) {
+    gateError.textContent = "Please fill in the required fields and accept the consent to continue.";
+    gateError.hidden = false;
+    return;
+  }
+  const submit = gate.querySelector("button");
+  submit.disabled = true;
+  try {
+    await startSession(visitor);
+    gate.hidden = true;
+    chat.hidden = false;
+    addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
+    input.focus();
+  } catch (err) {
+    gateError.textContent = "Could not start the chat. Please check your details and try again.";
+    gateError.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -54,5 +87,3 @@ form.addEventListener("submit", async (event) => {
     input.focus();
   }
 });
-
-addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
