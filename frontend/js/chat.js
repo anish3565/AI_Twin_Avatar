@@ -20,6 +20,14 @@ const FIELDS = [
 const CONSENT_PROMPT =
   "Thanks. This chat and your details may be stored and used for analytics. Reply yes to share them, or no to carry on without sharing.";
 
+const SPEECH_CHUNK_MAX = 200;
+const ECHO_TAIL_MS = 500;
+const ECHO_WINDOW_MS = 3000;
+const COMMIT_MS = 1200;
+const BARGE_LEVEL = 0.35;
+const BARGE_MS = 250;
+const MAX_FAILURES = 3;
+
 let sessionId = null;
 let detailsSaved = false;
 let flowStep = -1;
@@ -29,13 +37,108 @@ const readAloud = document.getElementById("read-aloud");
 const mic = document.getElementById("mic");
 const orbWrap = document.getElementById("orb-wrap");
 const orb = document.getElementById("orb");
+const caption = document.getElementById("caption");
+const voiceNote = document.getElementById("voice-note");
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canSpeak = "speechSynthesis" in window;
 
-function speak(text) {
+let voice = null;
+let speechToken = 0;
+let pendingChunks = 0;
+let botSpeaking = false;
+let speechEndedAt = 0;
+let lastSpokenWords = new Set();
+
+function wordsOf(text) {
+  return text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+}
+
+function sanitizeForSpeech(text) {
+  return text
+    .replace(/https?:\/\/\S+/g, "the link on screen")
+    .replace(/[\w.+-]+@[\w-]+(?:\.[A-Za-z]{2,})+/g, (email) => email.replace("@", " at ").replace(/\./g, " dot "))
+    .replace(/[*_#`>|]+/g, "")
+    .replace(/^\s*[-•]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitLongSentence(sentence) {
+  const pieces = [];
+  let current = "";
+  for (const word of sentence.split(" ")) {
+    if (current && (current + " " + word).length > SPEECH_CHUNK_MAX) {
+      pieces.push(current);
+      current = word;
+    } else {
+      current = current ? current + " " + word : word;
+    }
+  }
+  if (current) pieces.push(current);
+  return pieces;
+}
+
+function chunkForSpeech(text) {
+  const sentences = text.split(/(?<=[.!?])\s+/).flatMap((sentence) =>
+    sentence.length > SPEECH_CHUNK_MAX ? splitLongSentence(sentence) : [sentence],
+  );
+  const chunks = [];
+  let current = "";
+  for (const sentence of sentences) {
+    if (current && (current + " " + sentence).length > SPEECH_CHUNK_MAX) {
+      chunks.push(current);
+      current = sentence;
+    } else {
+      current = current ? current + " " + sentence : sentence;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function pickVoice() {
+  const english = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
+  voice =
+    english.find((v) => v.localService && /natural|aria|jenny|samantha|daniel|zira/i.test(v.name)) ||
+    english.find((v) => v.localService) ||
+    english[0] ||
+    null;
+}
+
+function stopSpeaking() {
+  speechToken++;
+  pendingChunks = 0;
+  if (botSpeaking) speechEndedAt = performance.now();
+  botSpeaking = false;
+  if (canSpeak) speechSynthesis.cancel();
+}
+
+function speakText(text) {
   if (!canSpeak || !readAloud.checked) return;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+  stopSpeaking();
+  const chunks = chunkForSpeech(sanitizeForSpeech(text));
+  if (!chunks.length) return;
+  const token = speechToken;
+  lastSpokenWords = new Set(wordsOf(text));
+  botSpeaking = true;
+  pendingChunks = chunks.length;
+  for (const chunk of chunks) {
+    const utterance = new SpeechSynthesisUtterance(chunk);
+    if (voice) utterance.voice = voice;
+    const finish = () => {
+      if (token !== speechToken) return;
+      pendingChunks--;
+      if (pendingChunks > 0) return;
+      setTimeout(() => {
+        if (token !== speechToken) return;
+        botSpeaking = false;
+        speechEndedAt = performance.now();
+      }, ECHO_TAIL_MS);
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    speechSynthesis.speak(utterance);
+  }
 }
 
 function addMessage(text, kind) {
@@ -44,20 +147,38 @@ function addMessage(text, kind) {
   p.textContent = text;
   log.appendChild(p);
   log.scrollTop = log.scrollHeight;
-  if (kind === "bot") speak(text);
+  if (kind === "bot") speakText(text);
+  return p;
 }
 
-if (!canSpeak) readAloud.closest(".controls").hidden = true;
+if (canSpeak) {
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+} else {
+  readAloud.closest(".controls").hidden = true;
+}
 readAloud.addEventListener("change", () => {
-  if (!readAloud.checked && canSpeak) speechSynthesis.cancel();
+  if (!readAloud.checked) stopSpeaking();
 });
 
-const MAX_FAILURES = 3;
 let meter = null;
 let meterWanted = false;
+let loudSince = null;
 
 function setLevel(level) {
   orb.style.setProperty("--level", level.toFixed(3));
+}
+
+function watchBargeIn(level) {
+  if (!botSpeaking || level < BARGE_LEVEL) {
+    loudSince = null;
+    return;
+  }
+  if (loudSince === null) loudSince = performance.now();
+  if (performance.now() - loudSince >= BARGE_MS) {
+    loudSince = null;
+    stopSpeaking();
+  }
 }
 
 async function startLevelMeter() {
@@ -65,7 +186,9 @@ async function startLevelMeter() {
   if (!navigator.mediaDevices || !window.AudioContext) return;
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
   } catch (err) {
     return;
   }
@@ -90,6 +213,7 @@ async function startLevelMeter() {
     const rms = Math.sqrt(sum / samples.length);
     level = level * 0.75 + Math.min(1, rms * 5) * 0.25;
     setLevel(level);
+    watchBargeIn(level);
     meter.frame = requestAnimationFrame(tick);
   };
   tick();
@@ -97,6 +221,7 @@ async function startLevelMeter() {
 
 function stopLevelMeter() {
   meterWanted = false;
+  loudSince = null;
   setLevel(0);
   if (!meter) return;
   cancelAnimationFrame(meter.frame);
@@ -105,14 +230,51 @@ function stopLevelMeter() {
   meter = null;
 }
 
+let commitTimer = null;
+let utterance = "";
+
+function isEcho(transcript) {
+  if (performance.now() - speechEndedAt > ECHO_WINDOW_MS) return false;
+  const words = wordsOf(transcript);
+  if (words.length < 3) return false;
+  const hits = words.filter((word) => lastSpokenWords.has(word)).length;
+  return hits / words.length >= 0.7;
+}
+
+function commitUtterance() {
+  commitTimer = null;
+  if (sendButton.disabled) {
+    commitTimer = setTimeout(commitUtterance, 500);
+    return;
+  }
+  const text = input.value.trim();
+  utterance = "";
+  if (text) askForm.requestSubmit();
+}
+
+function queueTranscript(text) {
+  utterance = utterance ? utterance + " " + text : text;
+  input.value = utterance;
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(commitUtterance, COMMIT_MS);
+}
+
+function cancelPendingTranscript() {
+  clearTimeout(commitTimer);
+  commitTimer = null;
+  utterance = "";
+}
+
 if (SpeechRecognitionAPI) {
   const recognizer = new SpeechRecognitionAPI();
   recognizer.lang = "en-US";
   recognizer.continuous = true;
-  recognizer.interimResults = false;
+  recognizer.interimResults = true;
   recognizer.maxAlternatives = 1;
   let micOn = false;
   let failures = 0;
+  let sessionNo = 0;
+  const seen = new Set();
   mic.hidden = false;
 
   function startRecognizer() {
@@ -127,6 +289,8 @@ if (SpeechRecognitionAPI) {
     micOn = on;
     mic.classList.toggle("listening", on);
     orbWrap.hidden = !on;
+    voiceNote.hidden = !on;
+    caption.textContent = "";
     if (on) {
       failures = 0;
       startRecognizer();
@@ -138,6 +302,7 @@ if (SpeechRecognitionAPI) {
   }
 
   mic.addEventListener("click", () => setMic(!micOn));
+  recognizer.addEventListener("start", () => sessionNo++);
   recognizer.addEventListener("end", () => {
     if (micOn) setTimeout(() => micOn && startRecognizer(), 300);
   });
@@ -155,17 +320,25 @@ if (SpeechRecognitionAPI) {
     }
   });
   recognizer.addEventListener("speechstart", () => {
-    if (canSpeak) speechSynthesis.cancel();
+    if (!meter) stopSpeaking();
   });
   recognizer.addEventListener("result", (event) => {
     failures = 0;
+    let interimText = "";
     for (let i = event.resultIndex; i < event.results.length; i++) {
-      if (!event.results[i].isFinal || sendButton.disabled) continue;
-      const transcript = event.results[i][0].transcript.trim();
-      if (!transcript) continue;
-      input.value = transcript;
-      askForm.requestSubmit();
+      const result = event.results[i];
+      if (!result.isFinal) {
+        interimText = result[0].transcript.trim();
+        continue;
+      }
+      const key = sessionNo + ":" + i;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const transcript = result[0].transcript.trim();
+      if (!transcript || botSpeaking || isEcho(transcript)) continue;
+      queueTranscript(transcript);
     }
+    caption.textContent = interimText;
   });
 } else {
   mic.hidden = true;
@@ -233,6 +406,16 @@ async function saveAnswers() {
   addMessage(`Thanks, ${answers.name}. Ask me anything about my experience, projects or education.`, "bot");
 }
 
+const YES_WORDS = /^(y|yes|yeah|yep|yup|sure|ok|okay|alright)$/;
+const NO_WORDS = /^(n|no|nope|nah)$/;
+
+function parseConsent(message) {
+  const words = wordsOf(message).join(" ");
+  if (YES_WORDS.test(words)) return true;
+  if (NO_WORDS.test(words) || words === "no thanks") return false;
+  return null;
+}
+
 async function handleFlow(message) {
   if (message.toLowerCase() === "skip") {
     endFlow("No problem. Ask me anything about my experience, projects or education.");
@@ -248,10 +431,10 @@ async function handleFlow(message) {
     addMessage(flowStep < FIELDS.length ? FIELDS[flowStep][1] : CONSENT_PROMPT, "bot");
     return;
   }
-  const reply = message.toLowerCase();
-  if (reply === "yes" || reply === "y") {
+  const consent = parseConsent(message);
+  if (consent === true) {
     await saveAnswers();
-  } else if (reply === "no" || reply === "n") {
+  } else if (consent === false) {
     endFlow("Okay, nothing has been shared. Ask me anything about my experience, projects or education.");
   } else {
     addMessage("Please reply yes or no.", "bot");
@@ -260,12 +443,14 @@ async function handleFlow(message) {
 
 askForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  cancelPendingTranscript();
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
-  if (canSpeak) speechSynthesis.cancel();
+  stopSpeaking();
   addMessage(message, "user");
   sendButton.disabled = true;
+  const thinking = addMessage("Thinking...", "thinking");
   try {
     if (flowStep >= 0) {
       await handleFlow(message);
@@ -275,10 +460,13 @@ askForm.addEventListener("submit", async (event) => {
   } catch (err) {
     addMessage("Something went wrong. Please try again.", "error");
   } finally {
+    thinking.remove();
     sendButton.disabled = false;
     input.focus();
   }
 });
+
+input.addEventListener("input", cancelPendingTranscript);
 
 detailsButton.addEventListener("click", () => {
   gateError.hidden = true;
