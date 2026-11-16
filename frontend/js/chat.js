@@ -18,7 +18,8 @@ const FIELDS = [
   ["hiring_for", "Which role are you hiring for?"],
 ];
 const CONSENT_PROMPT =
-  "Thanks. This chat and your details may be stored and used for analytics. Reply yes to share them, or no to carry on without sharing.";
+  "Before we start, may I take a few quick details about you? This chat and your details may be stored and used for analytics. Reply yes to share them, or no or skip to go straight to chat.";
+const NO_SHARE_REPLY = "Okay, nothing has been shared. Ask me anything about my experience, projects or education.";
 
 const SPEECH_CHUNK_MAX = 200;
 const ECHO_TAIL_MS = 500;
@@ -410,7 +411,7 @@ async function saveAnswers() {
     linkedin_url: null,
   });
   if (!saved) {
-    addMessage("Could not save your details. Reply yes to try again, or no to skip.", "error");
+    addMessage("Could not save your details. Send any message to try again, or type skip to go straight to chat.", "error");
     return;
   }
   markSaved();
@@ -432,23 +433,32 @@ async function handleFlow(message) {
     endFlow("No problem. Ask me anything about my experience, projects or education.");
     return;
   }
-  if (flowStep < FIELDS.length) {
-    if (message.length > 120) {
-      addMessage("Please keep that under 120 characters.", "bot");
-      return;
+  if (flowStep === 0) {
+    const consent = parseConsent(message);
+    if (consent === true) {
+      flowStep = 1;
+      addMessage(FIELDS[0][1], "bot");
+    } else if (consent === false) {
+      endFlow(NO_SHARE_REPLY);
+    } else {
+      addMessage("Please reply yes or no.", "bot");
     }
-    answers[FIELDS[flowStep][0]] = message;
-    flowStep++;
-    addMessage(flowStep < FIELDS.length ? FIELDS[flowStep][1] : CONSENT_PROMPT, "bot");
     return;
   }
-  const consent = parseConsent(message);
-  if (consent === true) {
+  if (flowStep > FIELDS.length) {
     await saveAnswers();
-  } else if (consent === false) {
-    endFlow("Okay, nothing has been shared. Ask me anything about my experience, projects or education.");
+    return;
+  }
+  if (message.length > 120) {
+    addMessage("Please keep that under 120 characters.", "bot");
+    return;
+  }
+  answers[FIELDS[flowStep - 1][0]] = message;
+  flowStep++;
+  if (flowStep <= FIELDS.length) {
+    addMessage(FIELDS[flowStep - 1][1], "bot");
   } else {
-    addMessage("Please reply yes or no.", "bot");
+    await saveAnswers();
   }
 }
 
@@ -529,9 +539,6 @@ gate.addEventListener("submit", async (event) => {
 });
 
 addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
-addMessage(
-  "Before we start, may I ask a few quick questions? Type skip at any time to go straight to chat. " + FIELDS[0][1],
-  "bot",
-);
+addMessage(CONSENT_PROMPT, "bot");
 flowStep = 0;
 startSession().catch(() => addMessage("I couldn't connect. Please refresh and try again.", "error"));
