@@ -53,27 +53,37 @@ readAloud.addEventListener("change", () => {
 if (SpeechRecognitionAPI) {
   const recognizer = new SpeechRecognitionAPI();
   recognizer.lang = "en-US";
+  recognizer.continuous = true;
   recognizer.interimResults = false;
   recognizer.maxAlternatives = 1;
+  let micOn = false;
   mic.hidden = false;
   mic.addEventListener("click", () => {
-    if (mic.classList.contains("listening")) {
+    micOn = !micOn;
+    if (micOn) {
+      recognizer.start();
+    } else {
       recognizer.stop();
-      return;
     }
-    recognizer.start();
   });
   recognizer.addEventListener("start", () => mic.classList.add("listening"));
-  recognizer.addEventListener("end", () => mic.classList.remove("listening"));
-  recognizer.addEventListener("error", () => {
+  recognizer.addEventListener("end", () => {
     mic.classList.remove("listening");
-    addMessage("I couldn't hear that. Please try again or type your question.", "error");
+    if (micOn) recognizer.start();
+  });
+  recognizer.addEventListener("error", (event) => {
+    if (event.error === "no-speech" || event.error === "aborted") return;
+    micOn = false;
+    addMessage("I couldn't use the microphone. Please check permission or type your question.", "error");
   });
   recognizer.addEventListener("result", (event) => {
-    const transcript = event.results[0][0].transcript.trim();
-    if (!transcript) return;
-    input.value = transcript;
-    askForm.requestSubmit();
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (!event.results[i].isFinal || sendButton.disabled) continue;
+      const transcript = event.results[i][0].transcript.trim();
+      if (!transcript) continue;
+      input.value = transcript;
+      askForm.requestSubmit();
+    }
   });
 }
 
