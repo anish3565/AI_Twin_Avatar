@@ -25,12 +25,56 @@ let detailsSaved = false;
 let flowStep = -1;
 const answers = {};
 
+const readAloud = document.getElementById("read-aloud");
+const mic = document.getElementById("mic");
+const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+const canSpeak = "speechSynthesis" in window;
+
+function speak(text) {
+  if (!canSpeak || !readAloud.checked) return;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
 function addMessage(text, kind) {
   const p = document.createElement("p");
   p.className = "msg " + kind;
   p.textContent = text;
   log.appendChild(p);
   log.scrollTop = log.scrollHeight;
+  if (kind === "bot") speak(text);
+}
+
+if (!canSpeak) readAloud.closest(".controls").hidden = true;
+readAloud.addEventListener("change", () => {
+  if (!readAloud.checked && canSpeak) speechSynthesis.cancel();
+});
+
+if (SpeechRecognitionAPI) {
+  const recognizer = new SpeechRecognitionAPI();
+  recognizer.lang = "en-US";
+  recognizer.interimResults = false;
+  recognizer.maxAlternatives = 1;
+  mic.hidden = false;
+  mic.addEventListener("click", () => {
+    if (mic.classList.contains("listening")) {
+      recognizer.stop();
+      return;
+    }
+    recognizer.start();
+  });
+  recognizer.addEventListener("start", () => mic.classList.add("listening"));
+  recognizer.addEventListener("end", () => mic.classList.remove("listening"));
+  recognizer.addEventListener("error", () => {
+    mic.classList.remove("listening");
+    addMessage("I couldn't hear that. Please try again or type your question.", "error");
+  });
+  recognizer.addEventListener("result", (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    if (!transcript) return;
+    input.value = transcript;
+    askForm.requestSubmit();
+  });
 }
 
 async function startSession() {
@@ -125,6 +169,7 @@ askForm.addEventListener("submit", async (event) => {
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
+  if (canSpeak) speechSynthesis.cancel();
   addMessage(message, "user");
   sendButton.disabled = true;
   try {
