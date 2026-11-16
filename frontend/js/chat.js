@@ -318,7 +318,7 @@ function commitUtterance() {
     pendingVoiceSend = pendingVoiceSend ? pendingVoiceSend + " " + text : text;
     return;
   }
-  sendMessage(text);
+  sendMessage(text, true);
 }
 
 function queueTranscript(text) {
@@ -426,7 +426,7 @@ async function startSession() {
   sessionId = (await res.json()).session_id;
 }
 
-async function answerStreaming(message, thinking) {
+async function answerStreaming(message, thinking, voice) {
   const speech = startStreamSpeech();
   let bubble = null;
   let shown = "";
@@ -435,7 +435,7 @@ async function answerStreaming(message, thinking) {
     const res = await fetch(API_BASE + "/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message }),
+      body: JSON.stringify({ session_id: sessionId, message, voice }),
     });
     if (!res.ok || !res.body) throw new Error("chat " + res.status);
     const reader = res.body.getReader();
@@ -571,7 +571,7 @@ async function handleFlow(message) {
   }
 }
 
-async function sendMessage(message) {
+async function sendMessage(message, voice = false) {
   stopSpeaking();
   addMessage(message, "user");
   sendButton.disabled = true;
@@ -580,7 +580,7 @@ async function sendMessage(message) {
     if (flowStep >= 0) {
       await handleFlow(message);
     } else {
-      await answerStreaming(message, thinking);
+      await answerStreaming(message, thinking, voice);
     }
   } catch (err) {
     addMessage("Something went wrong. Please try again.", "error");
@@ -590,7 +590,7 @@ async function sendMessage(message) {
     if (pendingVoiceSend) {
       const next = pendingVoiceSend;
       pendingVoiceSend = "";
-      sendMessage(next);
+      sendMessage(next, true);
     } else {
       input.focus();
     }

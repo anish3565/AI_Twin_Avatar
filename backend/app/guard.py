@@ -3,6 +3,7 @@ import re
 
 MAX_MESSAGE_CHARS = 1000
 MAX_REPLY_CHARS = 700
+VOICE_REPLY_CHARS = 400
 
 BLOCKED_REPLY = "I can only talk about my experience, projects and education. Ask me about those."
 SAFE_FALLBACK_REPLY = "Sorry, I can't share that. Ask me about my experience, projects or education."

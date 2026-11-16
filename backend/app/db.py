@@ -81,6 +81,11 @@ def save_message(
         )
 
 
+def mark_voice_used(session_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("update sessions set voice_used = true where id = %s", (session_id,))
+
+
 def safe(fn, *args, **kwargs) -> None:
     try:
         fn(*args, **kwargs)
