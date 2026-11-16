@@ -23,7 +23,7 @@ const CONSENT_PROMPT =
 const SPEECH_CHUNK_MAX = 200;
 const ECHO_TAIL_MS = 500;
 const ECHO_WINDOW_MS = 3000;
-const COMMIT_MS = 1200;
+const COMMIT_MS = 600;
 const BARGE_LEVEL = 0.35;
 const BARGE_MS = 250;
 const MAX_FAILURES = 3;
@@ -232,6 +232,7 @@ function stopLevelMeter() {
 
 let commitTimer = null;
 let utterance = "";
+let sendAfterReply = false;
 
 function isEcho(transcript) {
   if (performance.now() - speechEndedAt > ECHO_WINDOW_MS) return false;
@@ -243,13 +244,17 @@ function isEcho(transcript) {
 
 function commitUtterance() {
   commitTimer = null;
-  if (sendButton.disabled) {
-    commitTimer = setTimeout(commitUtterance, 500);
+  const text = input.value.trim();
+  if (!text) {
+    utterance = "";
     return;
   }
-  const text = input.value.trim();
+  if (sendButton.disabled) {
+    sendAfterReply = true;
+    return;
+  }
   utterance = "";
-  if (text) askForm.requestSubmit();
+  askForm.requestSubmit();
 }
 
 function queueTranscript(text) {
@@ -462,6 +467,10 @@ askForm.addEventListener("submit", async (event) => {
   } finally {
     thinking.remove();
     sendButton.disabled = false;
+    if (sendAfterReply) {
+      sendAfterReply = false;
+      commitUtterance();
+    }
     input.focus();
   }
 });
