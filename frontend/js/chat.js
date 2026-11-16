@@ -107,11 +107,11 @@ function estimatedSpeechMs(chunks) {
 }
 
 const VOICE_PREFERENCE = [
-  /Microsoft (Aria|Jenny|Guy|Libby|Sonia|Ryan).*Natural/i,
-  /Google UK English Female/i,
-  /Google US English/i,
-  /Samantha/i,
+  /Microsoft (Guy|Ryan|Christopher|Eric|Davis).*Natural/i,
+  /Google UK English Male/i,
   /Daniel/i,
+  /Alex/i,
+  /Microsoft (David|Mark)/i,
 ];
 const SPEECH_RATE = 0.95;
 
