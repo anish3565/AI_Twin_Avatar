@@ -98,8 +98,12 @@ function chunkForSpeech(text) {
   return chunks;
 }
 
+function speechBudgetMs(chars) {
+  return Math.max(3000, chars * 80) + 3000;
+}
+
 function estimatedSpeechMs(chunks) {
-  return Math.max(3000, chunks.join(" ").length * 80) + 3000;
+  return speechBudgetMs(chunks.join(" ").length);
 }
 
 function pickVoice() {
@@ -149,12 +153,58 @@ function speakText(text) {
   }
 }
 
-function addMessage(text, kind) {
+function startStreamSpeech() {
+  stopSpeaking();
+  lastSpokenWords = new Set();
+  botSpeaking = true;
+  return { token: speechToken, chars: 0, done: false, watchdog: null };
+}
+
+function markSpeechDone(speech) {
+  if (speech.token !== speechToken) return;
+  botSpeaking = false;
+  speechEndedAt = performance.now();
+}
+
+function speakAppend(speech, text) {
+  if (!canSpeak || !readAloud.checked || speech.token !== speechToken) return;
+  for (const word of wordsOf(text)) lastSpokenWords.add(word);
+  speech.chars += text.length + 1;
+  clearTimeout(speech.watchdog);
+  speech.watchdog = setTimeout(() => markSpeechDone(speech), speechBudgetMs(speech.chars) + ECHO_TAIL_MS);
+  for (const chunk of chunkForSpeech(sanitizeForSpeech(text))) {
+    pendingChunks++;
+    const utterance = new SpeechSynthesisUtterance(chunk);
+    if (voice) utterance.voice = voice;
+    const finish = () => {
+      if (speech.token !== speechToken) return;
+      pendingChunks--;
+      if (pendingChunks === 0 && speech.done) setTimeout(() => markSpeechDone(speech), ECHO_TAIL_MS);
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    speechSynthesis.speak(utterance);
+  }
+}
+
+function finishStreamSpeech(speech) {
+  speech.done = true;
+  if (speech.token === speechToken && pendingChunks === 0) {
+    setTimeout(() => markSpeechDone(speech), ECHO_TAIL_MS);
+  }
+}
+
+function createMessage(text, kind) {
   const p = document.createElement("p");
   p.className = "msg " + kind;
   p.textContent = text;
   log.appendChild(p);
   log.scrollTop = log.scrollHeight;
+  return p;
+}
+
+function addMessage(text, kind) {
+  const p = createMessage(text, kind);
   if (kind === "bot") speakText(text);
   return p;
 }
@@ -376,14 +426,63 @@ async function startSession() {
   sessionId = (await res.json()).session_id;
 }
 
-async function ask(message) {
-  const res = await fetch(API_BASE + "/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, message }),
-  });
-  if (!res.ok) throw new Error("chat " + res.status);
-  return (await res.json()).reply;
+async function answerStreaming(message, thinking) {
+  const speech = startStreamSpeech();
+  let bubble = null;
+  let shown = "";
+  let final = null;
+  try {
+    const res = await fetch(API_BASE + "/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, message }),
+    });
+    if (!res.ok || !res.body) throw new Error("chat " + res.status);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (!final) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line.trim()) {
+          const event = JSON.parse(line);
+          if (event.type === "sentence") {
+            if (!bubble) {
+              thinking.remove();
+              bubble = createMessage("", "bot");
+            }
+            shown = shown ? shown + " " + event.text : event.text;
+            bubble.textContent = shown;
+            log.scrollTop = log.scrollHeight;
+            speakAppend(speech, event.text);
+          } else if (event.type === "end") {
+            final = event;
+            break;
+          }
+        }
+        newline = buffer.indexOf("\n");
+      }
+    }
+    if (!final) throw new Error("stream ended early");
+    thinking.remove();
+    if (!bubble) bubble = createMessage("", "bot");
+    if (final.reply !== shown) {
+      stopSpeaking();
+      bubble.textContent = final.reply;
+      speakText(final.reply);
+    } else {
+      finishStreamSpeech(speech);
+    }
+  } catch (err) {
+    if (bubble) bubble.remove();
+    stopSpeaking();
+    throw err;
+  }
 }
 
 async function saveVisitor(fields) {
@@ -481,7 +580,7 @@ async function sendMessage(message) {
     if (flowStep >= 0) {
       await handleFlow(message);
     } else {
-      addMessage(await ask(message), "bot");
+      await answerStreaming(message, thinking);
     }
   } catch (err) {
     addMessage("Something went wrong. Please try again.", "error");

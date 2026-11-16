@@ -1,19 +1,25 @@
+import json
 import os
+import re
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import aclosing
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.background import BackgroundTask
 
 from . import db, llm
 from .guard import (
     BLOCKED_REPLY,
     MAX_MESSAGE_CHARS,
+    MAX_REPLY_CHARS,
     SAFE_FALLBACK_REPLY,
     clean_question,
     looks_like_injection,
@@ -204,3 +210,132 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
         error_type=error_type,
     )
     return ChatOut(message_id=message_id, reply=reply, outcome=outcome)
+
+
+SENTENCE_END = re.compile(r"[.!?]\s")
+
+
+def _line(event: dict) -> str:
+    return json.dumps(event, ensure_ascii=False) + "\n"
+
+
+def _complete_sentences(buffer: str) -> tuple[list[str], str]:
+    sentences = []
+    start = 0
+    for match in SENTENCE_END.finditer(buffer):
+        sentence = buffer[start:match.end()].strip()
+        if sentence:
+            sentences.append(sentence)
+        start = match.end()
+    return sentences, buffer[start:]
+
+
+def _accept(sentences: list[str], spoken: list[str]) -> tuple[list[str], bool]:
+    accepted = []
+    for sentence in sentences:
+        if not reply_is_safe(sentence) or len(" ".join([*spoken, sentence])) > MAX_REPLY_CHARS:
+            return accepted, False
+        spoken.append(sentence)
+        accepted.append(sentence)
+    return accepted, True
+
+
+def _is_unknown(text: str) -> bool:
+    return text.strip().upper().startswith(UNKNOWN_TOKEN)
+
+
+async def _stream_events(question: str, state: dict) -> AsyncIterator[str]:
+    spoken: list[str] = []
+    pending = ""
+    full = ""
+    decided = False
+    try:
+        if looks_like_injection(question):
+            state.update(outcome="refused", reply=BLOCKED_REPLY)
+        else:
+            async with aclosing(llm.stream(build_messages(question, load_knowledge()), state)) as deltas:
+                async for delta in deltas:
+                    full += delta
+                    pending += delta
+                    if not decided:
+                        if len(full.strip()) < len(UNKNOWN_TOKEN):
+                            continue
+                        decided = True
+                        if _is_unknown(full):
+                            state.update(outcome="unknown", reply=f"I don't have that information yet. {contact_line()}".strip())
+                            break
+                    if len(full) > MAX_REPLY_CHARS:
+                        state.update(outcome="refused", reply=SAFE_FALLBACK_REPLY)
+                        break
+                    complete, pending = _complete_sentences(pending)
+                    accepted, ok = _accept(complete, spoken)
+                    for sentence in accepted:
+                        yield _line({"type": "sentence", "text": sentence})
+                    if not ok:
+                        state.update(outcome="refused", reply=SAFE_FALLBACK_REPLY)
+                        break
+
+            if state["outcome"] is None and not decided and _is_unknown(full):
+                state.update(outcome="unknown", reply=f"I don't have that information yet. {contact_line()}".strip())
+
+            if state["outcome"] is None:
+                accepted, ok = _accept([pending.strip()] if pending.strip() else [], spoken)
+                for sentence in accepted:
+                    yield _line({"type": "sentence", "text": sentence})
+                if not ok:
+                    state.update(outcome="refused", reply=SAFE_FALLBACK_REPLY)
+                elif not spoken:
+                    state.update(outcome="error", error_type="EmptyReply", reply=f"Sorry, I couldn't answer right now. {contact_line()}".strip())
+                else:
+                    state.update(outcome="answered", reply=" ".join(spoken))
+    except Exception as exc:
+        state.update(
+            outcome="error",
+            error_type=type(exc).__name__,
+            reply=f"Sorry, I couldn't answer right now. {contact_line()}".strip(),
+        )
+
+    state["total_ms"] = int((time.perf_counter() - state["started"]) * 1000)
+    yield _line({
+        "type": "end",
+        "message_id": state["message_id"],
+        "outcome": state["outcome"],
+        "reply": state["reply"],
+    })
+
+
+def _save_streamed(state: dict) -> None:
+    db.safe(
+        db.save_message,
+        message_id=state["message_id"],
+        session_id=state["session_id"],
+        question=state["question"],
+        reply=state.get("reply"),
+        outcome=state.get("outcome") or "error",
+        provider=state.get("provider"),
+        model=state.get("model"),
+        prompt_tokens=state.get("prompt_tokens"),
+        completion_tokens=state.get("completion_tokens"),
+        total_ms=state.get("total_ms"),
+        fallback_used=state.get("fallback_used", False),
+        error_type=state.get("error_type"),
+    )
+
+
+@app.post("/chat/stream")
+async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
+    if not chat_limiter.allow(client_key(request)):
+        raise HTTPException(status_code=429, detail="Too many messages. Please try again in a few minutes.")
+    state = {
+        "message_id": str(uuid.uuid4()),
+        "session_id": body.session_id,
+        "question": body.message,
+        "started": time.perf_counter(),
+        "outcome": None,
+        "reply": None,
+    }
+    return StreamingResponse(
+        _stream_events(body.message, state),
+        media_type="application/x-ndjson",
+        background=BackgroundTask(_save_streamed, state),
+    )
