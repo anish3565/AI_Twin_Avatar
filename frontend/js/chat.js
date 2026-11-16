@@ -139,12 +139,57 @@ function newUtterance(chunk) {
   return utterance;
 }
 
+const FAQ_CLIPS = [
+  { file: "01", q: "What do you do?", a: "Anish is an AI/ML and MLOps engineer. He builds MLOps pipelines, GenAI agents and data dashboards." },
+  { file: "02", q: "How much experience do you have?", a: "Anish has 2 years of experience." },
+  { file: "03", q: "Where are you based?", a: "Anish is based in New Delhi, India." },
+  { file: "04", q: "What was your most recent role?", a: "Anish was an AI/ML Developer at Software Technology Parks of India (STPI) on a contract from July 2024 to July 2026." },
+  { file: "05", q: "What did you do at STPI?", a: "He built a recommendation system for 7,500+ users, raising engagement by 40%. He also built dashboards tracking 10+ KPIs, cutting manual reporting by 30%, and a rule-based chatbot on MySQL data for onboarding and recurring support queries." },
+  { file: "06", q: "Did you do any internships?", a: "Yes. Anish interned at the Centre for Development of Telematics (C-DOT) from June to July 2023, analyzing 10,000+ coastal sensor records across 5 regions and building Power BI reports from the results." },
+  { file: "07", q: "What are your main skills?", a: "Python, SQL, Docker, AWS, MLflow, DVC, FastAPI, Flask, Terraform, GitHub Actions, CrewAI, LangChain, Ollama and RAG, among others. Anish's full skills list is on his resume." },
+  { file: "08", q: "Do you have any certifications?", a: "Yes. Anish holds certifications from Microsoft, Coursera, Udemy and LinkedIn Learning, including Fundamentals of Machine Learning (Microsoft) and Complete A.I. and Machine Learning, Data Science Bootcamp (Udemy)." },
+  { file: "09", q: "What languages do you speak?", a: "English (fluent) and Hindi (native)." },
+  { file: "10", q: "What is your education?", a: "Anish has a B.Tech in Instrumentation and Control Engineering from Netaji Subhas University of Technology (NSUT), with a CGPA of 7.60." },
+  { file: "11", q: "What is your best project?", a: "Anish's most-cited projects are an AI voice interview bot, NLP Sentinel (an MLOps platform on AWS EKS) and a vehicle insurance MLOps pipeline. See the projects list for details." },
+  { file: "12", q: "What personal projects do you have?", a: "Anish's personal projects, in order: 1. 100x Voice Agent, 2. NLP Project (NLP Sentinel), 3. Vehicle Insurance Agent (a vehicle insurance MLOps pipeline), 4. Product Research Agent, 5. Voice Sentiment Project (an emotion and intent recognizer using speech)." },
+  { file: "13", q: "Can I see your voice bot?", a: "Yes. The voice interview bot is live at https://100xvoiceagentanishtripathi.vercel.app/ and its code is at https://github.com/anish3565/100x_Voice_Agent_Anish_Tripathi." },
+];
+
+let clipAudio = null;
+
 function stopSpeaking() {
   speechToken++;
   pendingChunks = 0;
   if (botSpeaking) speechEndedAt = performance.now();
   botSpeaking = false;
   if (canSpeak) speechSynthesis.cancel();
+  if (clipAudio) {
+    clipAudio.pause();
+    clipAudio = null;
+  }
+}
+
+function findFaqClip(message) {
+  const key = wordsOf(message).join(" ");
+  return FAQ_CLIPS.find((clip) => wordsOf(clip.q).join(" ") === key) || null;
+}
+
+function playFaqClip(clip) {
+  createMessage(clip.a, "bot");
+  if (!readAloud.checked) return;
+  lastSpokenWords = new Set(wordsOf(clip.a));
+  botSpeaking = true;
+  const audio = new Audio(`audio/faq/${clip.file}.mp3`);
+  clipAudio = audio;
+  const finish = () => {
+    if (clipAudio !== audio) return;
+    clipAudio = null;
+    botSpeaking = false;
+    speechEndedAt = performance.now();
+  };
+  audio.onended = finish;
+  audio.onerror = finish;
+  audio.play().catch(finish);
 }
 
 function speakText(text) {
@@ -603,8 +648,12 @@ async function sendMessage(message, voice = false) {
   sendButton.disabled = true;
   const thinking = addMessage("Thinking...", "thinking");
   try {
+    const clip = flowStep < 0 ? findFaqClip(message) : null;
     if (flowStep >= 0) {
       await handleFlow(message);
+    } else if (clip) {
+      thinking.remove();
+      playFaqClip(clip);
     } else {
       await answerStreaming(message, thinking, voice);
     }
