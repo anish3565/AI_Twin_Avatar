@@ -232,7 +232,7 @@ function stopLevelMeter() {
 
 let commitTimer = null;
 let utterance = "";
-let sendAfterReply = false;
+let pendingVoiceSend = "";
 
 function isEcho(transcript) {
   if (performance.now() - speechEndedAt > ECHO_WINDOW_MS) return false;
@@ -244,22 +244,19 @@ function isEcho(transcript) {
 
 function commitUtterance() {
   commitTimer = null;
-  const text = input.value.trim();
-  if (!text) {
-    utterance = "";
-    return;
-  }
-  if (sendButton.disabled) {
-    sendAfterReply = true;
-    return;
-  }
+  const text = utterance.trim();
   utterance = "";
-  askForm.requestSubmit();
+  caption.textContent = "";
+  if (!text) return;
+  if (sendButton.disabled) {
+    pendingVoiceSend = pendingVoiceSend ? pendingVoiceSend + " " + text : text;
+    return;
+  }
+  sendMessage(text);
 }
 
 function queueTranscript(text) {
   utterance = utterance ? utterance + " " + text : text;
-  input.value = utterance;
   clearTimeout(commitTimer);
   commitTimer = setTimeout(commitUtterance, COMMIT_MS);
 }
@@ -446,12 +443,7 @@ async function handleFlow(message) {
   }
 }
 
-askForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  cancelPendingTranscript();
-  const message = input.value.trim();
-  if (!message) return;
-  input.value = "";
+async function sendMessage(message) {
   stopSpeaking();
   addMessage(message, "user");
   sendButton.disabled = true;
@@ -467,12 +459,23 @@ askForm.addEventListener("submit", async (event) => {
   } finally {
     thinking.remove();
     sendButton.disabled = false;
-    if (sendAfterReply) {
-      sendAfterReply = false;
-      commitUtterance();
+    if (pendingVoiceSend) {
+      const next = pendingVoiceSend;
+      pendingVoiceSend = "";
+      sendMessage(next);
+    } else {
+      input.focus();
     }
-    input.focus();
   }
+}
+
+askForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  cancelPendingTranscript();
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+  sendMessage(message);
 });
 
 input.addEventListener("input", cancelPendingTranscript);
