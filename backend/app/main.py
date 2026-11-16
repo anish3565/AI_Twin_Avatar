@@ -21,6 +21,7 @@ from .guard import (
     MAX_MESSAGE_CHARS,
     MAX_REPLY_CHARS,
     SAFE_FALLBACK_REPLY,
+    VOICE_REPLY_CHARS,
     clean_question,
     looks_like_injection,
     reply_is_safe,
@@ -119,6 +120,7 @@ class ChatIn(BaseModel):
 
     session_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    voice: bool = False
 
     @field_validator("message")
     @classmethod
@@ -171,11 +173,14 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
     fallback_used = False
     error_type = None
 
+    if body.voice:
+        background.add_task(db.safe, db.mark_voice_used, body.session_id)
+
     if looks_like_injection(question):
         outcome, reply = "refused", BLOCKED_REPLY
     else:
         try:
-            result = await llm.complete(build_messages(question, load_knowledge()))
+            result = await llm.complete(build_messages(question, load_knowledge(), voice=body.voice))
             provider, model = result.provider, result.model
             prompt_tokens, completion_tokens = result.prompt_tokens, result.completion_tokens
             fallback_used = result.fallback_used
@@ -183,7 +188,7 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
             if text.upper().startswith(UNKNOWN_TOKEN):
                 outcome = "unknown"
                 reply = f"I don't have that information yet. {contact_line()}".strip()
-            elif not reply_is_safe(text):
+            elif not reply_is_safe(text) or (body.voice and len(text) > VOICE_REPLY_CHARS):
                 outcome, reply = "refused", SAFE_FALLBACK_REPLY
             else:
                 outcome, reply = "answered", text
@@ -230,10 +235,10 @@ def _complete_sentences(buffer: str) -> tuple[list[str], str]:
     return sentences, buffer[start:]
 
 
-def _accept(sentences: list[str], spoken: list[str]) -> tuple[list[str], bool]:
+def _accept(sentences: list[str], spoken: list[str], limit: int) -> tuple[list[str], bool]:
     accepted = []
     for sentence in sentences:
-        if not reply_is_safe(sentence) or len(" ".join([*spoken, sentence])) > MAX_REPLY_CHARS:
+        if not reply_is_safe(sentence) or len(" ".join([*spoken, sentence])) > limit:
             return accepted, False
         spoken.append(sentence)
         accepted.append(sentence)
@@ -249,11 +254,13 @@ async def _stream_events(question: str, state: dict) -> AsyncIterator[str]:
     pending = ""
     full = ""
     decided = False
+    limit = VOICE_REPLY_CHARS if state["voice"] else MAX_REPLY_CHARS
     try:
         if looks_like_injection(question):
             state.update(outcome="refused", reply=BLOCKED_REPLY)
         else:
-            async with aclosing(llm.stream(build_messages(question, load_knowledge()), state)) as deltas:
+            messages = build_messages(question, load_knowledge(), voice=state["voice"])
+            async with aclosing(llm.stream(messages, state)) as deltas:
                 async for delta in deltas:
                     full += delta
                     pending += delta
@@ -264,11 +271,11 @@ async def _stream_events(question: str, state: dict) -> AsyncIterator[str]:
                         if _is_unknown(full):
                             state.update(outcome="unknown", reply=f"I don't have that information yet. {contact_line()}".strip())
                             break
-                    if len(full) > MAX_REPLY_CHARS:
+                    if len(full) > limit:
                         state.update(outcome="refused", reply=SAFE_FALLBACK_REPLY)
                         break
                     complete, pending = _complete_sentences(pending)
-                    accepted, ok = _accept(complete, spoken)
+                    accepted, ok = _accept(complete, spoken, limit)
                     for sentence in accepted:
                         yield _line({"type": "sentence", "text": sentence})
                     if not ok:
@@ -279,7 +286,7 @@ async def _stream_events(question: str, state: dict) -> AsyncIterator[str]:
                 state.update(outcome="unknown", reply=f"I don't have that information yet. {contact_line()}".strip())
 
             if state["outcome"] is None:
-                accepted, ok = _accept([pending.strip()] if pending.strip() else [], spoken)
+                accepted, ok = _accept([pending.strip()] if pending.strip() else [], spoken, limit)
                 for sentence in accepted:
                     yield _line({"type": "sentence", "text": sentence})
                 if not ok:
@@ -320,6 +327,8 @@ def _save_streamed(state: dict) -> None:
         fallback_used=state.get("fallback_used", False),
         error_type=state.get("error_type"),
     )
+    if state["voice"]:
+        db.safe(db.mark_voice_used, state["session_id"])
 
 
 @app.post("/chat/stream")
@@ -330,6 +339,7 @@ async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
         "message_id": str(uuid.uuid4()),
         "session_id": body.session_id,
         "question": body.message,
+        "voice": body.voice,
         "started": time.perf_counter(),
         "outcome": None,
         "reply": None,

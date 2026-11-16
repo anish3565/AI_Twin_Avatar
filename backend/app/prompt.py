@@ -22,6 +22,10 @@ KNOWLEDGE:
 {knowledge}
 """
 
+VOICE_NOTE = """
+Voice mode: the visitor spoke this question and your reply will be read aloud. Answer in one or two short spoken sentences, with no lists, links or symbols.
+"""
+
 
 def load_knowledge(directory: Path = KNOWLEDGE_DIR) -> str:
     parts = []
@@ -32,8 +36,11 @@ def load_knowledge(directory: Path = KNOWLEDGE_DIR) -> str:
     return "\n\n".join(parts)
 
 
-def build_messages(question: str, knowledge: str) -> list[dict]:
+def build_messages(question: str, knowledge: str, voice: bool = False) -> list[dict]:
+    system = SYSTEM_PROMPT.format(knowledge=knowledge or "(empty)")
+    if voice:
+        system += VOICE_NOTE
     return [
-        {"role": "system", "content": SYSTEM_PROMPT.format(knowledge=knowledge or "(empty)")},
+        {"role": "system", "content": system},
         {"role": "user", "content": f"<question>{question}</question>"},
     ]

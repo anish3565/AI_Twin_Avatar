@@ -23,10 +23,11 @@ def env(monkeypatch):
 
 @pytest.fixture
 def saved(monkeypatch):
-    calls = {"messages": [], "sessions": [], "visitors": []}
+    calls = {"messages": [], "sessions": [], "visitors": [], "voice": []}
     monkeypatch.setattr(db, "save_message", lambda **kw: calls["messages"].append(kw))
     monkeypatch.setattr(db, "create_session", lambda sid, code: calls["sessions"].append((sid, code)))
     monkeypatch.setattr(db, "link_visitor", lambda sid, visitor: calls["visitors"].append((sid, visitor)))
+    monkeypatch.setattr(db, "mark_voice_used", lambda sid: calls["voice"].append(sid))
     return calls
 
 
@@ -128,8 +129,8 @@ def stub_stream(monkeypatch, chunks, calls=None, error=None):
     monkeypatch.setattr(llm, "stream", fake)
 
 
-def stream_events(client, message):
-    r = client.post("/chat/stream", json={"session_id": SESSION_ID, "message": message})
+def stream_events(client, message, voice=False):
+    r = client.post("/chat/stream", json={"session_id": SESSION_ID, "message": message, "voice": voice})
     assert r.status_code == 200
     return [json.loads(line) for line in r.text.splitlines() if line.strip()]
 
@@ -197,6 +198,45 @@ def test_stream_error_hides_provider_detail(monkeypatch, client, saved):
     assert events[-1]["outcome"] == "error"
     assert "secret upstream detail" not in events[-1]["reply"]
     assert saved["messages"][0]["error_type"] == "RuntimeError"
+
+
+def test_voice_adds_spoken_instruction(monkeypatch, client, saved):
+    calls = []
+    stub_llm(monkeypatch, "I built a chatbot for STPI.", calls)
+    client.post("/chat", json={"session_id": SESSION_ID, "message": "What did you build?", "voice": True})
+    client.post("/chat", json={"session_id": SESSION_ID, "message": "What did you build?"})
+    assert "Voice mode:" in calls[0][0]["content"]
+    assert "Voice mode:" not in calls[1][0]["content"]
+
+
+def test_voice_reply_over_limit_is_refused(monkeypatch, client):
+    stub_llm(monkeypatch, "x" * 450)
+    voice = client.post("/chat", json={"session_id": SESSION_ID, "message": "Tell me more", "voice": True}).json()
+    text = client.post("/chat", json={"session_id": SESSION_ID, "message": "Tell me more"}).json()
+    assert voice["outcome"] == "refused"
+    assert text["outcome"] == "answered"
+
+
+def test_stream_voice_over_limit_is_refused(monkeypatch, client):
+    stub_stream(monkeypatch, ["x" * 450])
+    assert stream_events(client, "Tell me more", voice=True)[-1]["outcome"] == "refused"
+    assert stream_events(client, "Tell me more")[-1]["outcome"] == "answered"
+
+
+def test_voice_marks_session_voice_used(monkeypatch, client, saved):
+    stub_llm(monkeypatch, "Answer.")
+    client.post("/chat", json={"session_id": SESSION_ID, "message": "Hi"})
+    assert saved["voice"] == []
+    client.post("/chat", json={"session_id": SESSION_ID, "message": "Hi", "voice": True})
+    assert saved["voice"] == [SESSION_ID]
+
+
+def test_stream_voice_marks_session_voice_used(monkeypatch, client, saved):
+    stub_stream(monkeypatch, ["Answer."])
+    stream_events(client, "Hi")
+    assert saved["voice"] == []
+    stream_events(client, "Hi", voice=True)
+    assert saved["voice"] == [SESSION_ID]
 
 
 def test_stream_rate_limit_returns_429(monkeypatch, client):
