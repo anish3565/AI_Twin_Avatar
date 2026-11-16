@@ -33,5 +33,8 @@ A: Anish has a B.Tech in Instrumentation and Control Engineering from Netaji Sub
 Q: What is your best project?
 A: Anish's most-cited projects are an AI voice interview bot, NLP Sentinel (an MLOps platform on AWS EKS) and a vehicle insurance MLOps pipeline. See the projects list for details.
 
+Q: What personal projects do you have?
+A: Anish's personal projects, in order: 1. 100x Voice Agent, 2. NLP Project (NLP Sentinel), 3. Vehicle Insurance Agent (a vehicle insurance MLOps pipeline), 4. Product Research Agent, 5. Voice Sentiment Project (an emotion and intent recognizer using speech).
+
 Q: Can I see your voice bot?
 A: Yes. The voice interview bot is live at https://100xvoiceagentanishtripathi.vercel.app/ and its code is at https://github.com/anish3565/100x_Voice_Agent_Anish_Tripathi.
