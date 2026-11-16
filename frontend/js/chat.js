@@ -13,11 +13,26 @@ function addMessage(text, kind) {
   log.scrollTop = log.scrollHeight;
 }
 
+let sessionId = null;
+
+async function ensureSession() {
+  if (sessionId) return sessionId;
+  const res = await fetch(API_BASE + "/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invite_code: null }),
+  });
+  if (!res.ok) throw new Error("session " + res.status);
+  sessionId = (await res.json()).session_id;
+  return sessionId;
+}
+
 async function ask(message) {
+  const id = await ensureSession();
   const res = await fetch(API_BASE + "/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ session_id: id, message }),
   });
   if (!res.ok) throw new Error("chat " + res.status);
   return (await res.json()).reply;
