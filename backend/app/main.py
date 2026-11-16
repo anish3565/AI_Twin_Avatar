@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -70,7 +71,31 @@ def client_key(request: Request) -> str:
 class SessionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    company: str = Field(min_length=1, max_length=120)
+    role: str | None = Field(default=None, max_length=120)
+    linkedin_url: str | None = Field(default=None, max_length=300, pattern=r"^https://(www\.)?linkedin\.com/\S*$")
     invite_code: str | None = Field(default=None, max_length=64)
+    consent: Literal[True]
+
+    @field_validator("name", "company")
+    @classmethod
+    def clean_required(cls, value: str) -> str:
+        cleaned = clean_question(value)
+        if not cleaned:
+            raise ValueError("field is empty")
+        return cleaned
+
+    @field_validator("role")
+    @classmethod
+    def clean_optional(cls, value: str | None) -> str | None:
+        return (clean_question(value) or None) if value else None
+
+    @field_validator("email", "linkedin_url")
+    @classmethod
+    def strip(cls, value: str | None) -> str | None:
+        return value.strip() if value else None
 
 
 class SessionOut(BaseModel):
@@ -103,7 +128,8 @@ def start_session(body: SessionIn, request: Request, background: BackgroundTasks
     if not session_limiter.allow(client_key(request)):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
     session_id = str(uuid.uuid4())
-    background.add_task(db.safe, db.create_session, session_id, body.invite_code)
+    visitor = body.model_dump(include={"name", "email", "company", "role", "linkedin_url"})
+    background.add_task(db.safe, db.create_session, session_id, body.invite_code, visitor)
     return SessionOut(session_id=session_id)
 
 
