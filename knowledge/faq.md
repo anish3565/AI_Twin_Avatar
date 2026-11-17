@@ -10,7 +10,7 @@ Q: Where are you based?
 A: Anish is based in New Delhi, India.
 
 Q: What was your most recent role?
-A: Anish was an AI/ML Developer at Software Technology Parks of India (STPI) on a contract from July 2024 to July 2026.
+A: Anish was an AI/ML Developer at Software Technology Parks of India (STPI) from July 2024 to July 2026.
 
 Q: What did you do at STPI?
 A: He built a recommendation system for 7,500+ users, raising engagement by 40%. He also built dashboards tracking 10+ KPIs, cutting manual reporting by 30%, and a rule-based chatbot on MySQL data for onboarding and recurring support queries.
