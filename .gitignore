@@ -223,3 +223,7 @@ __marimo__/
 CLAUDE.md
 .claude/
 HANDOFF.md
+
+# local voice and avatar media, models and envs
+voice/
+avatar/

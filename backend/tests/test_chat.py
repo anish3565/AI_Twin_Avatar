@@ -406,6 +406,18 @@ def test_question_is_wrapped_as_untrusted_data():
     assert messages[1] == {"role": "user", "content": "<question>Where are you based?</question>"}
 
 
+def test_history_is_placed_before_the_latest_question():
+    history = [
+        {"role": "user", "content": "What was your role at STPI?"},
+        {"role": "assistant", "content": "I was an AI and MLOps engineer."},
+    ]
+    messages = build_messages("Tell me more", "## faq\nNew Delhi", history=history)
+    assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
+    assert messages[1]["content"] == "<question>What was your role at STPI?</question>"
+    assert messages[2]["content"] == "I was an AI and MLOps engineer."
+    assert messages[3]["content"] == "<question>Tell me more</question>"
+
+
 def test_system_prompt_treats_question_as_untrusted():
     from app.prompt import SYSTEM_PROMPT
 

@@ -56,12 +56,46 @@ let botSpeaking = false;
 let speechEndedAt = 0;
 let lastSpokenWords = new Set();
 
+const HISTORY_TURNS = 4;
+const HISTORY_CHARS = 400;
+const REPEAT_REQUEST = /^(please )?(can you |could you )?(repeat|say)( that| it)?( again)?( please)?$|^(come again|pardon|what did you say|what was that)( please)?$/;
+let recentTurns = [];
+let lastReply = "";
+
 function wordsOf(text) {
   return text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
 }
 
+const SPOKEN_FORMS = [
+  ["AI/ML and MLOps engineer", "artificial intelligence, machine learning and MLOps engineer"],
+  ["AI/ML", "artificial intelligence and machine learning"],
+  ["GenAI", "generative AI"],
+  ["CGPA", "C G P A"],
+  ["NSUT", "N S U T"],
+  ["C-DOT", "C DOT"],
+  ["STPI", "S T P I"],
+  ["AWS", "A W S"],
+  ["EKS", "E K S"],
+  ["NLP", "N L P"],
+  ["MySQL", "My S Q L"],
+  ["SQL", "S Q L"],
+  ["KPIs", "K P Is"],
+  ["KPI", "K P I"],
+];
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function spokenForm(text) {
+  return SPOKEN_FORMS.reduce(
+    (out, [written, spoken]) => out.replace(new RegExp(`\\b${escapeRegExp(written)}\\b`, "g"), spoken),
+    text,
+  );
+}
+
 function sanitizeForSpeech(text) {
-  return text
+  return spokenForm(text)
     .replace(/https?:\/\/\S+/g, "the link on screen")
     .replace(/[\w.+-]+@[\w-]+(?:\.[A-Za-z]{2,})+/g, (email) => email.replace("@", " at ").replace(/\./g, " dot "))
     .replace(/[*_#`>|]+/g, "")
@@ -129,7 +163,7 @@ function pickVoice() {
       return;
     }
   }
-  voice = english.find((v) => v.localService) || english[0] || null;
+  voice = english.find((v) => /Google/i.test(v.name)) || english.find((v) => v.localService) || english[0] || null;
 }
 
 function newUtterance(chunk) {
@@ -461,7 +495,7 @@ async function answerStreaming(message, thinking, voice) {
     const res = await fetch(API_BASE + "/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message, voice }),
+      body: JSON.stringify({ session_id: sessionId, message, voice, history: recentTurns }),
     });
     if (!res.ok || !res.body) throw new Error("chat " + res.status);
     const reader = res.body.getReader();
@@ -504,6 +538,7 @@ async function answerStreaming(message, thinking, voice) {
     } else {
       finishStreamSpeech(speech);
     }
+    if (final.outcome === "answered" || final.outcome === "unknown") rememberTurn(message, final.reply);
   } catch (err) {
     if (bubble) bubble.remove();
     stopSpeaking();
@@ -597,6 +632,15 @@ async function handleFlow(message) {
   }
 }
 
+function rememberTurn(question, reply) {
+  recentTurns = [
+    ...recentTurns,
+    { role: "user", content: question.slice(0, HISTORY_CHARS) },
+    { role: "assistant", content: reply.slice(0, HISTORY_CHARS) },
+  ].slice(-HISTORY_TURNS);
+  lastReply = reply;
+}
+
 async function sendMessage(message, voice = false) {
   stopSpeaking();
   addMessage(message, "user");
@@ -605,6 +649,8 @@ async function sendMessage(message, voice = false) {
   try {
     if (flowStep >= 0) {
       await handleFlow(message);
+    } else if (lastReply && REPEAT_REQUEST.test(wordsOf(message).join(" "))) {
+      addMessage(lastReply, "bot");
     } else {
       await answerStreaming(message, thinking, voice);
     }

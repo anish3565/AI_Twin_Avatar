@@ -116,12 +116,28 @@ class VisitorOut(BaseModel):
     saved: bool
 
 
+class HistoryTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=400)
+
+    @field_validator("content")
+    @classmethod
+    def sanitize(cls, value: str) -> str:
+        cleaned = clean_question(value)
+        if not cleaned:
+            raise ValueError("content is empty")
+        return cleaned
+
+
 class ChatIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     voice: bool = False
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=4)
 
     @field_validator("message")
     @classmethod
@@ -130,6 +146,14 @@ class ChatIn(BaseModel):
         if not cleaned:
             raise ValueError("message is empty")
         return cleaned
+
+
+def recent_turns(body: ChatIn) -> list[dict]:
+    return [
+        {"role": turn.role, "content": turn.content}
+        for turn in body.history
+        if not (turn.role == "user" and looks_like_injection(turn.content))
+    ]
 
 
 class ChatOut(BaseModel):
@@ -182,7 +206,7 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
         outcome, reply = "refused", BLOCKED_REPLY
     else:
         try:
-            result = await llm.complete(build_messages(question, load_knowledge(), voice=body.voice))
+            result = await llm.complete(build_messages(question, load_knowledge(), voice=body.voice, history=recent_turns(body)))
             provider, model = result.provider, result.model
             prompt_tokens, completion_tokens = result.prompt_tokens, result.completion_tokens
             fallback_used = result.fallback_used
@@ -261,7 +285,7 @@ async def _stream_events(question: str, state: dict) -> AsyncIterator[str]:
         if looks_like_injection(question):
             state.update(outcome="refused", reply=BLOCKED_REPLY)
         else:
-            messages = build_messages(question, load_knowledge(), voice=state["voice"])
+            messages = build_messages(question, load_knowledge(), voice=state["voice"], history=state["history"])
             async with aclosing(llm.stream(messages, state)) as deltas:
                 async for delta in deltas:
                     full += delta
@@ -342,6 +366,7 @@ async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
         "session_id": body.session_id,
         "question": body.message,
         "voice": body.voice,
+        "history": recent_turns(body),
         "started": time.perf_counter(),
         "outcome": None,
         "reply": None,
