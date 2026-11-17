@@ -26,6 +26,7 @@ from .guard import (
     looks_like_injection,
     reply_is_safe,
 )
+from .notify import send_lead_alert
 from .prompt import UNKNOWN_TOKEN, build_messages, load_knowledge
 from .ratelimit import RateLimiter
 
@@ -147,7 +148,7 @@ def start_session(body: SessionIn, request: Request, background: BackgroundTasks
 
 
 @app.post("/visitor", response_model=VisitorOut)
-def save_visitor(body: VisitorIn, request: Request) -> VisitorOut:
+def save_visitor(body: VisitorIn, request: Request, background: BackgroundTasks) -> VisitorOut:
     if not session_limiter.allow(client_key(request)):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
     visitor = body.model_dump(include={"name", "email", "company", "role", "hiring_for", "linkedin_url"})
@@ -157,6 +158,7 @@ def save_visitor(body: VisitorIn, request: Request) -> VisitorOut:
         raise HTTPException(status_code=404, detail="Session not found.")
     except Exception:
         raise HTTPException(status_code=503, detail="Could not save your details. Please try again.")
+    background.add_task(send_lead_alert, visitor)
     return VisitorOut(saved=True)
 
 
