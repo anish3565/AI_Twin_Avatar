@@ -1,12 +1,12 @@
 # Resume
 
 ## Summary
-AI/ML developer with 2 years of experience building MLOps pipelines, GenAI agents and data dashboards. Worked at STPI on a contract from July 2024 to July 2026, and interned at C-DOT in 2023. Skilled in Python, SQL, Docker, AWS and MLflow.
+AI/ML developer with 2 years of experience building MLOps pipelines, GenAI agents and data dashboards. Worked at STPI from July 2024 to July 2026, and interned at C-DOT in 2023. Skilled in Python, SQL, Docker, AWS and MLflow.
 
 ## Experience
 
 ### AI/ML Developer at Software Technology Parks of India (STPI), New Delhi
-- Dates: July 2024 - July 2026 (contract)
+- Dates: July 2024 - July 2026
 - What I did:
   - Built a recommendation system for 7,500+ users, raising engagement by 40%.
   - Built dashboards tracking 10+ KPIs, cutting manual reporting by 30%.
