@@ -57,6 +57,14 @@
     body.voice-mode .ask-row { order: 3; flex: none; width: min(520px, 100%); }
     body.voice-mode .notice { order: 4; }
     body.voice-mode #mic { min-width: 120px; }
+    .avatar { width: 150px; height: 150px; flex: none; order: 0; }
+    .avatar svg { width: 100%; height: 100%; display: block; }
+    .avatar .eye { transform-box: fill-box; transform-origin: center; animation: blink 4.5s infinite; }
+    @keyframes blink { 0%, 95%, 100% { transform: scaleY(1); } 97.5% { transform: scaleY(0.08); } }
+    body.avatar-mode .avatar { width: 130px; height: 130px; }
+    body.avatar-mode #log { height: 30vh; }
+    body.avatar-mode .orb { width: 56px; height: 56px; }
+    .avatar-head { transition: transform 60ms linear; }
     @media (prefers-color-scheme: dark) {
       body { background: #111; color: #eee; }
       .chooser-card { background: #1b1b1d; color: #eee; }
@@ -76,15 +84,35 @@
   <div id="mode-chooser" class="chooser">
     <div class="chooser-card" role="dialog" aria-labelledby="chooser-title">
       <h2 id="chooser-title">How would you like to chat?</h2>
-      <p>Talk uses your microphone and reads replies aloud. Voice works best in Chrome or Edge.</p>
+      <p>Avatar shows a cartoon of me that speaks the replies. Talk uses your microphone and reads replies aloud. Voice works best in Chrome or Edge.</p>
       <div class="choices">
-        <button type="button" id="choose-voice">Talk</button>
+        <button type="button" id="choose-avatar">Avatar</button>
+        <button type="button" id="choose-voice" class="secondary">Talk</button>
         <button type="button" id="choose-text" class="secondary">Type</button>
       </div>
     </div>
   </div>
   <main>
     <h1>Chat with Anish's AI Twin</h1>
+    <div id="avatar" class="avatar" role="img" aria-label="Cartoon of Anish's AI twin" hidden>
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <g id="avatar-head" class="avatar-head">
+          <ellipse cx="100" cy="184" rx="52" ry="14" fill="#2b4a7a" opacity="0.25"/>
+          <circle cx="100" cy="100" r="76" fill="#f3c59b" stroke="#6b4228" stroke-width="3"/>
+          <path d="M26 98 C 18 44, 58 24, 100 24 C 148 24, 184 50, 176 98 C 160 70, 132 60, 100 60 C 72 60, 46 72, 26 98 Z" fill="#2b1d14"/>
+          <ellipse cx="58" cy="128" rx="10" ry="6" fill="#ff8a8a" opacity="0.45"/>
+          <ellipse cx="142" cy="128" rx="10" ry="6" fill="#ff8a8a" opacity="0.45"/>
+          <ellipse class="eye" cx="76" cy="104" rx="7.5" ry="10" fill="#1d1d1d"/>
+          <ellipse class="eye" cx="124" cy="104" rx="7.5" ry="10" fill="#1d1d1d"/>
+          <circle cx="79" cy="100" r="2.5" fill="#fff"/>
+          <circle cx="127" cy="100" r="2.5" fill="#fff"/>
+          <path d="M64 86 Q76 80 88 86" stroke="#2b1d14" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path d="M112 86 Q124 80 136 86" stroke="#2b1d14" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path d="M98 112 Q100 120 102 112" stroke="#8a5a3a" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <ellipse id="avatar-mouth" cx="100" cy="142" rx="12" ry="1.5" fill="#7a1f1f"/>
+        </g>
+      </svg>
+    </div>
     <div id="log" aria-live="polite"></div>
     <form id="ask-form" class="ask">
       <div class="ask-row">
@@ -128,6 +156,7 @@
     </form>
   </div>
 
+  <script src="js/avatar.js"></script>
   <script src="js/chat.js"></script>
 </body>
 </html>

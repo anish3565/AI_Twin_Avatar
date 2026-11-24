@@ -44,7 +44,10 @@ const voiceNote = document.getElementById("voice-note");
 const modeChooser = document.getElementById("mode-chooser");
 const chooseVoice = document.getElementById("choose-voice");
 const chooseText = document.getElementById("choose-text");
+const chooseAvatar = document.getElementById("choose-avatar");
+const avatarEl = document.getElementById("avatar");
 let voiceMode = false;
+let avatarStarted = false;
 let startVoice = null;
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canSpeak = "speechSynthesis" in window;
@@ -721,8 +724,16 @@ gate.addEventListener("submit", async (event) => {
 
 function enterMode(mode) {
   modeChooser.hidden = true;
-  voiceMode = mode === "voice";
+  // Avatar mode is voice mode with the cartoon shown above the chat.
+  const avatarMode = mode === "avatar";
+  voiceMode = mode === "voice" || avatarMode;
   document.body.classList.toggle("voice-mode", voiceMode);
+  document.body.classList.toggle("avatar-mode", avatarMode);
+  avatarEl.hidden = !avatarMode;
+  if (avatarMode && !avatarStarted) {
+    avatarStarted = true;
+    startAvatar(() => botSpeaking);
+  }
   if (voiceMode) {
     readAloud.checked = true;
     if (startVoice) startVoice();
@@ -732,6 +743,7 @@ function enterMode(mode) {
   flowStep = 0;
 }
 
+chooseAvatar.addEventListener("click", () => enterMode("avatar"));
 chooseVoice.addEventListener("click", () => enterMode("voice"));
 chooseText.addEventListener("click", () => enterMode("text"));
 
