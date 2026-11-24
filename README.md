@@ -6,8 +6,10 @@ Live site: https://aitwinavatar-frontend.vercel.app
 
 ## What it does
 
-- **Three modes:** Avatar (a cartoon that speaks the replies), Talk (voice in, spoken replies) and Type (text only). Visitors can switch mode at any time and keep the same conversation.
+- **Three modes:** Avatar (a cartoon that speaks the replies and moves its mouth with the voice), Talk (voice in, spoken replies) and Type (text only). A **Switch mode** button lets visitors change mode at any time and keeps the same conversation.
+- **Stage view:** in Avatar and Talk modes, only the current question and answer show in full. Scrolling up, or the History button, opens the whole conversation.
 - **Grounded answers:** the bot answers only from the Markdown files in `knowledge/`. If the answer is not there, it says so and points to the contact email.
+- **Queued questions:** a question sent while a reply is still arriving waits and is sent when the reply finishes.
 - **Safety:** prompt-injection checks, a reply guard that blocks unknown links and leaked instructions, and rate limits per visitor.
 - **Consent first:** the bot asks before collecting a name, company, role and the role being hired for. Details are saved only after explicit consent.
 - **Lead alerts:** when a visitor shares their details, an alert goes to Telegram (optional).
@@ -83,7 +85,7 @@ Set these in `.env` locally, or in the Vercel project settings when deployed. Ne
 pytest
 ```
 
-The test suite runs without calling any model or database. It covers the guard, the prompt, the chat and stream endpoints, and rate limits. It currently runs 55 tests.
+The test suite runs without calling any model or database. It covers the guard, the prompt, the chat and stream endpoints, mode handling, rate limits and the stray UNKNOWN fix. It currently runs 65 tests.
 
 ## Evaluation
 
@@ -95,7 +97,7 @@ python evals/run_eval.py --out evals/results.json
 
 It prints a pass or fail line for each question, a score per category, and the total. The exit code is non-zero if any question fails.
 
-Latest run (2026-11-24, live Groq model with Gemini fallback):
+Latest run (2026-11-24, live Groq model with Gemini fallback, before the stray UNKNOWN fix):
 
 | Category | Passed |
 | --- | --- |
@@ -116,9 +118,16 @@ Model answers can vary between runs, so treat this as a snapshot.
 
 ## Status
 
-Built: knowledge-grounded chat, three modes with switching, consent and lead alerts, the reply guard, rate limits, the evaluation set, and per-message mode tracking.
+Built: knowledge-grounded chat, three modes with switching, the stage view with scroll-up history, the animated avatar, consent and lead alerts, the reply guard, rate limits, queued questions, the evaluation set, and per-message mode tracking.
 
 Not yet built: usage tracking with an 80% alert, thumbs up or down feedback, timing and error telemetry, the admin dashboard, job-fit mode, and session tags. The database already has columns for some of these.
+
+## Known limitations
+
+- **Avatar lip-sync is approximate.** The mouth opens and closes with each sentence's start and end, not with individual sounds.
+- **Voice input needs Chrome or Edge.** Where speech recognition is missing, the Talk option is disabled. Avatar mode still speaks the replies.
+- **Spoken voice depends on the browser.** The chosen voice is whatever the browser provides.
+- **Model memory is short.** The model sees only the last four turns. The full conversation is kept on screen and in the database.
 
 ## License
 
