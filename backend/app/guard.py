@@ -1,5 +1,9 @@
 import os
 import re
+from functools import lru_cache
+from pathlib import Path
+
+KNOWLEDGE_DIR = Path(__file__).resolve().parents[2] / "knowledge"
 
 MAX_MESSAGE_CHARS = 1000
 MAX_REPLY_CHARS = 700
@@ -36,9 +40,25 @@ def looks_like_injection(question: str) -> bool:
     return _INJECTION.search(question) is not None
 
 
-def _allowed_urls() -> tuple[str, ...]:
-    value = os.environ.get("CONTACT_LINKEDIN", "").strip().lower()
-    return (value,) if value else ()
+def _normalise_url(url: str) -> str:
+    return url.strip().lower().rstrip(".,;:!?)\"'").rstrip("/")
+
+
+@lru_cache(maxsize=1)
+def _knowledge_urls() -> frozenset[str]:
+    urls = set()
+    for path in KNOWLEDGE_DIR.glob("*.md"):
+        for url in _URL.findall(path.read_text(encoding="utf-8")):
+            urls.add(_normalise_url(url))
+    return frozenset(urls)
+
+
+def _allowed_urls() -> frozenset[str]:
+    urls = set(_knowledge_urls())
+    linkedin = os.environ.get("CONTACT_LINKEDIN", "").strip()
+    if linkedin:
+        urls.add(_normalise_url(linkedin))
+    return frozenset(urls)
 
 
 def _allowed_emails() -> set[str]:
@@ -54,7 +74,7 @@ def reply_is_safe(reply: str) -> bool:
         return False
     allowed_urls = _allowed_urls()
     for url in _URL.findall(reply):
-        if not any(url.lower().startswith(a) for a in allowed_urls):
+        if _normalise_url(url) not in allowed_urls:
             return False
     allowed_emails = _allowed_emails()
     for email in _EMAIL.findall(reply):
