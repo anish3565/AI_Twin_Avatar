@@ -46,6 +46,7 @@ const chooseVoice = document.getElementById("choose-voice");
 const chooseText = document.getElementById("choose-text");
 const chooseAvatar = document.getElementById("choose-avatar");
 const avatarEl = document.getElementById("avatar");
+const historyBtn = document.getElementById("history-btn");
 let voiceMode = false;
 let avatarStarted = false;
 let startVoice = null;
@@ -646,6 +647,7 @@ function rememberTurn(question, reply) {
 
 async function sendMessage(message, voice = false) {
   stopSpeaking();
+  setHistory(false);
   addMessage(message, "user");
   sendButton.disabled = true;
   const thinking = addMessage("Thinking...", "thinking");
@@ -722,14 +724,62 @@ gate.addEventListener("submit", async (event) => {
   addMessage("Thanks, your details are saved. Ask me anything about my experience, projects or education.", "bot");
 });
 
+// Voice and avatar modes show only the current question and answer.
+// Scrolling up (or the History button) opens the full history.
+function isStageMode() {
+  return document.body.classList.contains("voice-mode");
+}
+
+function isHistoryOpen() {
+  return document.body.classList.contains("history-open");
+}
+
+function atLatest() {
+  return log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+}
+
+function setHistory(open) {
+  const show = open && isStageMode();
+  document.body.classList.toggle("history-open", show);
+  historyBtn.setAttribute("aria-expanded", String(show));
+  if (show) log.scrollTop = log.scrollHeight;
+}
+
+const stageMain = document.querySelector("main");
+stageMain.addEventListener("wheel", (event) => {
+  if (!isStageMode()) return;
+  if (event.deltaY < 0) setHistory(true);
+  else if (event.deltaY > 0 && isHistoryOpen() && atLatest()) setHistory(false);
+}, { passive: true });
+
+let touchStartY = null;
+stageMain.addEventListener("touchstart", (event) => {
+  touchStartY = event.touches[0].clientY;
+}, { passive: true });
+stageMain.addEventListener("touchmove", (event) => {
+  if (!isStageMode() || touchStartY === null) return;
+  const dy = event.touches[0].clientY - touchStartY;
+  if (dy > 24) {
+    setHistory(true);
+    touchStartY = event.touches[0].clientY;
+  } else if (dy < -24 && isHistoryOpen() && atLatest()) {
+    setHistory(false);
+    touchStartY = event.touches[0].clientY;
+  }
+}, { passive: true });
+
+historyBtn.addEventListener("click", () => setHistory(!isHistoryOpen()));
+
 function enterMode(mode) {
   modeChooser.hidden = true;
-  // Avatar mode is voice mode with the cartoon shown above the chat.
+  // Avatar mode is voice mode with the cartoon in place of the orb.
   const avatarMode = mode === "avatar";
   voiceMode = mode === "voice" || avatarMode;
   document.body.classList.toggle("voice-mode", voiceMode);
   document.body.classList.toggle("avatar-mode", avatarMode);
   avatarEl.hidden = !avatarMode;
+  historyBtn.hidden = !voiceMode;
+  setHistory(false);
   if (avatarMode && !avatarStarted) {
     avatarStarted = true;
     startAvatar(() => botSpeaking);
