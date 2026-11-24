@@ -110,6 +110,22 @@ def test_listed_contact_url_passes(monkeypatch, client):
     assert body["outcome"] == "answered"
 
 
+@pytest.mark.parametrize("url", [
+    "https://100xvoiceagentanishtripathi.vercel.app/",
+    "https://github.com/anish3565/100x_Voice_Agent_Anish_Tripathi",
+])
+def test_knowledge_url_in_reply_passes(monkeypatch, client, url):
+    stub_llm(monkeypatch, f"You can try my voice bot at {url}.")
+    body = client.post("/chat", json={"session_id": SESSION_ID, "message": "Can I see your voice bot?"}).json()
+    assert body["outcome"] == "answered"
+
+
+def test_lookalike_url_is_not_a_prefix_match(monkeypatch, client):
+    stub_llm(monkeypatch, "See https://github.com/anish3565/100x_Voice_Agent_Anish_Tripathi/evil-fork")
+    body = client.post("/chat", json={"session_id": SESSION_ID, "message": "Where is your code?"}).json()
+    assert body["outcome"] == "refused"
+
+
 def test_overlong_reply_is_replaced(monkeypatch, client):
     stub_llm(monkeypatch, "x" * 1000)
     body = client.post("/chat", json={"session_id": SESSION_ID, "message": "Tell me more"}).json()
