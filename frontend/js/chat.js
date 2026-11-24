@@ -797,10 +797,12 @@ historyBtn.addEventListener("click", () => setHistory(!isHistoryOpen()));
 // First visit: greeting and the details prompt, then the chosen mode.
 function startChat(mode) {
   chatStarted = true;
+  // Apply the mode first: applyMode stops any speech already queued,
+  // so the greeting must be added after it or it is never spoken.
+  applyMode(mode);
   addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
   addMessage(CONSENT_PROMPT, "bot");
   flowStep = 0;
-  applyMode(mode);
 }
 
 // Switching modes keeps the conversation, the details flow and recent turns.
