@@ -47,8 +47,15 @@ const chooseText = document.getElementById("choose-text");
 const chooseAvatar = document.getElementById("choose-avatar");
 const avatarEl = document.getElementById("avatar");
 const historyBtn = document.getElementById("history-btn");
+const switchButton = document.getElementById("switch-mode");
+const chooserTitle = document.getElementById("chooser-title");
+const chooserCancel = document.getElementById("chooser-cancel");
 let voiceMode = false;
 let avatarStarted = false;
+let chatStarted = false;
+// "avatar", "voice" (Talk) or "text" (Type). Sent with every question.
+let currentMode = null;
+let stopVoice = null;
 let startVoice = null;
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canSpeak = "speechSynthesis" in window;
@@ -433,6 +440,7 @@ if (SpeechRecognitionAPI) {
   mic.addEventListener("click", () => setMic(!micOn));
   orb.addEventListener("click", () => voiceMode && setMic(!micOn));
   startVoice = () => setMic(true);
+  stopVoice = () => setMic(false);
   recognizer.addEventListener("start", () => {
     sessionNo++;
     seen.clear();
@@ -499,7 +507,13 @@ async function answerStreaming(message, thinking, voice) {
     const res = await fetch(API_BASE + "/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message, voice, history: recentTurns }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        message,
+        voice: currentMode !== "text",
+        mode: currentMode || "text",
+        history: recentTurns,
+      }),
     });
     if (!res.ok || !res.body) throw new Error("chat " + res.status);
     const reader = res.body.getReader();
@@ -770,11 +784,22 @@ stageMain.addEventListener("touchmove", (event) => {
 
 historyBtn.addEventListener("click", () => setHistory(!isHistoryOpen()));
 
-function enterMode(mode) {
-  modeChooser.hidden = true;
-  // Avatar mode is voice mode with the cartoon in place of the orb.
+// First visit: greeting and the details prompt, then the chosen mode.
+function startChat(mode) {
+  chatStarted = true;
+  addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
+  addMessage(CONSENT_PROMPT, "bot");
+  flowStep = 0;
+  applyMode(mode);
+}
+
+// Switching modes keeps the conversation, the details flow and recent turns.
+function applyMode(mode) {
+  stopSpeaking();
+  currentMode = mode;
+  // Avatar and voice are voice modes: the mic and the stage layout.
   const avatarMode = mode === "avatar";
-  voiceMode = mode === "voice" || avatarMode;
+  voiceMode = mode !== "text";
   document.body.classList.toggle("voice-mode", voiceMode);
   document.body.classList.toggle("avatar-mode", avatarMode);
   avatarEl.hidden = !avatarMode;
@@ -787,14 +812,35 @@ function enterMode(mode) {
   if (voiceMode) {
     readAloud.checked = true;
     if (startVoice) startVoice();
+  } else if (stopVoice) {
+    stopVoice();
   }
-  addMessage("Hi, I'm Anish's AI twin. Ask me about my experience, projects or education.", "bot");
-  addMessage(CONSENT_PROMPT, "bot");
-  flowStep = 0;
+  switchButton.hidden = !chatStarted;
 }
 
-chooseAvatar.addEventListener("click", () => enterMode("avatar"));
-chooseVoice.addEventListener("click", () => enterMode("voice"));
-chooseText.addEventListener("click", () => enterMode("text"));
+function chooseMode(mode) {
+  modeChooser.hidden = true;
+  if (!chatStarted) startChat(mode);
+  else applyMode(mode);
+}
+
+function openSwitcher() {
+  chooserTitle.textContent = "Switch mode";
+  chooserCancel.hidden = false;
+  const options = [[chooseAvatar, "avatar"], [chooseVoice, "voice"], [chooseText, "text"]];
+  for (const [button, mode] of options) {
+    button.disabled = mode === currentMode || (mode === "voice" && !SpeechRecognitionAPI);
+  }
+  modeChooser.hidden = false;
+  chooseAvatar.focus();
+}
+
+chooseAvatar.addEventListener("click", () => chooseMode("avatar"));
+chooseVoice.addEventListener("click", () => chooseMode("voice"));
+chooseText.addEventListener("click", () => chooseMode("text"));
+switchButton.addEventListener("click", openSwitcher);
+chooserCancel.addEventListener("click", () => {
+  modeChooser.hidden = true;
+});
 
 startSession().catch(() => addMessage("I couldn't connect. Please refresh and try again.", "error"));

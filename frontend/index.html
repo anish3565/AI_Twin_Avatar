@@ -28,6 +28,9 @@
     .caption:empty { display: none; }
     .msg.thinking { color: #888; font-style: italic; }
     #details-btn { position: fixed; right: 16px; bottom: 16px; z-index: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    #switch-mode.switch { position: fixed; top: 12px; right: 12px; z-index: 1; padding: 8px 12px; font-size: 0.85rem; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .chooser-card button:disabled { opacity: 0.4; }
+    #chooser-cancel { align-self: flex-end; }
     #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; z-index: 2; }
     #gate { background: #fff; color: #111; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; border-radius: 10px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
     #gate h2 { font-size: 1.05rem; margin: 0; }
@@ -101,6 +104,7 @@
         <button type="button" id="choose-voice" class="secondary">Talk</button>
         <button type="button" id="choose-text" class="secondary">Type</button>
       </div>
+      <button type="button" id="chooser-cancel" class="secondary" hidden>Cancel</button>
     </div>
   </div>
   <main>
@@ -143,6 +147,8 @@
     <p id="voice-note" class="notice" hidden>Voice mode: your browser's speech service processes your voice, and replies are read aloud. Use headphones for the most natural conversation.</p>
     <p class="notice">Conversations may be stored and used for analytics. Replies are read aloud by your browser when enabled.</p>
   </main>
+
+  <button id="switch-mode" type="button" class="switch" hidden>Switch mode</button>
 
   <button id="details-btn" type="button">Share your details</button>
 

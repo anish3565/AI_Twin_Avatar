@@ -56,18 +56,19 @@ def save_message(
     total_ms: int,
     fallback_used: bool,
     error_type: str | None,
+    mode: str | None = None,
 ) -> None:
     with _connect() as conn:
         conn.execute(
             """
             insert into messages (
                 id, session_id, question, reply, outcome, provider, model,
-                prompt_tokens, completion_tokens, total_ms, fallback_used, error_type
-            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                prompt_tokens, completion_tokens, total_ms, fallback_used, error_type, mode
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 message_id, session_id, question, reply, outcome, provider, model,
-                prompt_tokens, completion_tokens, total_ms, fallback_used, error_type,
+                prompt_tokens, completion_tokens, total_ms, fallback_used, error_type, mode,
             ),
         )
         if outcome == "unknown":
