@@ -137,6 +137,7 @@ class ChatIn(BaseModel):
     session_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     voice: bool = False
+    mode: Literal["avatar", "voice", "text"] | None = None
     history: list[HistoryTurn] = Field(default_factory=list, max_length=4)
 
     @field_validator("message")
@@ -146,6 +147,16 @@ class ChatIn(BaseModel):
         if not cleaned:
             raise ValueError("message is empty")
         return cleaned
+
+
+def resolve_mode(body: ChatIn) -> str:
+    # The mode the visitor was in when they asked. Old clients send only `voice`.
+    return body.mode or ("voice" if body.voice else "text")
+
+
+def is_spoken(mode: str, voice: bool) -> bool:
+    # Avatar and voice modes read the reply aloud, so they get the short spoken reply.
+    return voice or mode in ("avatar", "voice")
 
 
 def recent_turns(body: ChatIn) -> list[dict]:
@@ -194,19 +205,21 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
     started = time.perf_counter()
     message_id = str(uuid.uuid4())
     question = body.message
+    mode = resolve_mode(body)
+    spoken = is_spoken(mode, body.voice)
     provider = model = None
     prompt_tokens = completion_tokens = None
     fallback_used = False
     error_type = None
 
-    if body.voice:
+    if spoken:
         background.add_task(db.safe, db.mark_voice_used, body.session_id)
 
     if looks_like_injection(question):
         outcome, reply = "refused", BLOCKED_REPLY
     else:
         try:
-            result = await llm.complete(build_messages(question, load_knowledge(), voice=body.voice, history=recent_turns(body)))
+            result = await llm.complete(build_messages(question, load_knowledge(), voice=spoken, history=recent_turns(body)))
             provider, model = result.provider, result.model
             prompt_tokens, completion_tokens = result.prompt_tokens, result.completion_tokens
             fallback_used = result.fallback_used
@@ -214,7 +227,7 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
             if text.upper().startswith(UNKNOWN_TOKEN):
                 outcome = "unknown"
                 reply = f"I don't have that information yet. {contact_line()}".strip()
-            elif not reply_is_safe(text) or (body.voice and len(text) > VOICE_REPLY_CHARS):
+            elif not reply_is_safe(text) or (spoken and len(text) > VOICE_REPLY_CHARS):
                 outcome, reply = "refused", SAFE_FALLBACK_REPLY
             else:
                 outcome, reply = "answered", text
@@ -232,6 +245,7 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
         question=question,
         reply=reply,
         outcome=outcome,
+        mode=mode,
         provider=provider,
         model=model,
         prompt_tokens=prompt_tokens,
@@ -345,6 +359,7 @@ def _save_streamed(state: dict) -> None:
         question=state["question"],
         reply=state.get("reply"),
         outcome=state.get("outcome") or "error",
+        mode=state["mode"],
         provider=state.get("provider"),
         model=state.get("model"),
         prompt_tokens=state.get("prompt_tokens"),
@@ -361,11 +376,13 @@ def _save_streamed(state: dict) -> None:
 async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
     if not chat_limiter.allow(client_key(request)):
         raise HTTPException(status_code=429, detail="Too many messages. Please try again in a few minutes.")
+    mode = resolve_mode(body)
     state = {
         "message_id": str(uuid.uuid4()),
         "session_id": body.session_id,
         "question": body.message,
-        "voice": body.voice,
+        "mode": mode,
+        "voice": is_spoken(mode, body.voice),
         "history": recent_turns(body),
         "started": time.perf_counter(),
         "outcome": None,

@@ -424,3 +424,38 @@ def test_system_prompt_treats_question_as_untrusted():
     assert "first person" in SYSTEM_PROMPT
     assert "untrusted" in SYSTEM_PROMPT
     assert "Never output URLs" in SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("mode", ["avatar", "voice", "text"])
+def test_chat_saves_the_mode_the_question_was_asked_in(monkeypatch, client, saved, mode):
+    stub_llm(monkeypatch, "I built a chatbot for STPI.")
+    body = client.post("/chat", json={"session_id": SESSION_ID, "message": "What did you build?", "mode": mode}).json()
+    assert body["outcome"] == "answered"
+    assert saved["messages"][-1]["mode"] == mode
+
+
+def test_chat_without_mode_falls_back_to_voice_flag(monkeypatch, client, saved):
+    stub_llm(monkeypatch, "I built a chatbot for STPI.")
+    client.post("/chat", json={"session_id": SESSION_ID, "message": "What did you build?", "voice": True})
+    client.post("/chat", json={"session_id": SESSION_ID, "message": "And before that?"})
+    assert [m["mode"] for m in saved["messages"]] == ["voice", "text"]
+
+
+def test_unknown_mode_is_rejected(client):
+    r = client.post("/chat", json={"session_id": SESSION_ID, "message": "Hi", "mode": "video"})
+    assert r.status_code == 422
+
+
+def test_stream_saves_mode_and_spoken_length_limit_for_avatar(monkeypatch, client, saved):
+    stub_stream(monkeypatch, ["I built a chatbot for STPI."])
+    r = client.post("/chat/stream", json={"session_id": SESSION_ID, "message": "What did you build?", "mode": "avatar"})
+    assert r.status_code == 200
+    assert saved["messages"][-1]["mode"] == "avatar"
+    assert saved["voice"] == [SESSION_ID]
+
+
+def test_stream_text_mode_does_not_mark_voice_used(monkeypatch, client, saved):
+    stub_stream(monkeypatch, ["I built a chatbot for STPI."])
+    client.post("/chat/stream", json={"session_id": SESSION_ID, "message": "What did you build?", "mode": "text"})
+    assert saved["messages"][-1]["mode"] == "text"
+    assert saved["voice"] == []

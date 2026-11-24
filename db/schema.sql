@@ -49,6 +49,7 @@ create table if not exists messages (
     total_ms          integer,
     outcome           text not null check (outcome in ('answered', 'unknown', 'refused', 'error')),
     error_type        text,
+    mode              text check (mode in ('avatar', 'voice', 'text')),
     fallback_used     boolean not null default false,
     rating            smallint check (rating in (-1, 1)),
     created_at        timestamptz not null default now()
