@@ -475,3 +475,26 @@ def test_stream_text_mode_does_not_mark_voice_used(monkeypatch, client, saved):
     client.post("/chat/stream", json={"session_id": SESSION_ID, "message": "What did you build?", "mode": "text"})
     assert saved["messages"][-1]["mode"] == "text"
     assert saved["voice"] == []
+
+
+def test_trailing_unknown_is_removed_from_a_correct_answer(monkeypatch, client, saved):
+    stub_llm(monkeypatch, "I graduated in May 2024 with a CGPA of 7.60.UNKNOWN")
+    body = client.post("/chat", json={"session_id": SESSION_ID, "message": "What is your education?"}).json()
+    assert body["outcome"] == "answered"
+    assert body["reply"] == "I graduated in May 2024 with a CGPA of 7.60."
+    assert saved["messages"][-1]["reply"] == body["reply"]
+
+
+def test_standalone_unknown_still_means_unknown(monkeypatch, client):
+    stub_llm(monkeypatch, "UNKNOWN")
+    body = client.post("/chat", json={"session_id": SESSION_ID, "message": "What is your salary?"}).json()
+    assert body["outcome"] == "unknown"
+
+
+def test_stream_drops_trailing_unknown(monkeypatch, client, saved):
+    stub_stream(monkeypatch, ["I graduated in May 2024 with a CGPA of 7.60.", "UNKNOWN"])
+    events = stream_events(client, "What is your education?")
+    end = events[-1]
+    assert end["outcome"] == "answered"
+    assert end["reply"] == "I graduated in May 2024 with a CGPA of 7.60."
+    assert "UNKNOWN" not in " ".join(e["text"] for e in events if e["type"] == "sentence")

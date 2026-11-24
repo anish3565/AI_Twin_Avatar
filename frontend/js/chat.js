@@ -357,7 +357,9 @@ function stopLevelMeter() {
 
 let commitTimer = null;
 let utterance = "";
-let pendingVoiceSend = "";
+// Messages sent while a reply is still arriving wait here and go out next.
+let pendingSend = "";
+let busy = false;
 
 function isEcho(transcript) {
   if (performance.now() - speechEndedAt > ECHO_WINDOW_MS) return false;
@@ -381,8 +383,8 @@ function commitUtterance() {
   utterance = "";
   caption.textContent = "";
   if (!text) return;
-  if (sendButton.disabled) {
-    pendingVoiceSend = pendingVoiceSend ? pendingVoiceSend + " " + text : text;
+  if (busy) {
+    queueSend(text);
     return;
   }
   sendMessage(text, true);
@@ -663,7 +665,7 @@ async function sendMessage(message, voice = false) {
   stopSpeaking();
   setHistory(false);
   addMessage(message, "user");
-  sendButton.disabled = true;
+  busy = true;
   const thinking = addMessage("Thinking...", "thinking");
   try {
     if (flowStep >= 0) {
@@ -677,15 +679,19 @@ async function sendMessage(message, voice = false) {
     addMessage("Something went wrong. Please try again.", "error");
   } finally {
     thinking.remove();
-    sendButton.disabled = false;
-    if (pendingVoiceSend) {
-      const next = pendingVoiceSend;
-      pendingVoiceSend = "";
+    busy = false;
+    if (pendingSend) {
+      const next = pendingSend;
+      pendingSend = "";
       sendMessage(next, true);
     } else {
       input.focus();
     }
   }
+}
+
+function queueSend(text) {
+  pendingSend = pendingSend ? pendingSend + " " + text : text;
 }
 
 askForm.addEventListener("submit", (event) => {
@@ -694,6 +700,10 @@ askForm.addEventListener("submit", (event) => {
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
+  if (busy) {
+    queueSend(message);
+    return;
+  }
   sendMessage(message);
 });
 

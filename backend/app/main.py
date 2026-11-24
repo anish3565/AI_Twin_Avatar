@@ -25,6 +25,7 @@ from .guard import (
     clean_question,
     looks_like_injection,
     reply_is_safe,
+    strip_trailing_unknown,
 )
 from .notify import send_lead_alert
 from .prompt import UNKNOWN_TOKEN, build_messages, load_knowledge
@@ -223,7 +224,7 @@ async def chat(body: ChatIn, request: Request, background: BackgroundTasks) -> C
             provider, model = result.provider, result.model
             prompt_tokens, completion_tokens = result.prompt_tokens, result.completion_tokens
             fallback_used = result.fallback_used
-            text = result.text.strip()
+            text = strip_trailing_unknown(result.text.strip())
             if text.upper().startswith(UNKNOWN_TOKEN):
                 outcome = "unknown"
                 reply = f"I don't have that information yet. {contact_line()}".strip()
@@ -326,7 +327,8 @@ async def _stream_events(question: str, state: dict) -> AsyncIterator[str]:
                 state.update(outcome="unknown", reply=f"I don't have that information yet. {contact_line()}".strip())
 
             if state["outcome"] is None:
-                accepted, ok = _accept([pending.strip()] if pending.strip() else [], spoken, limit)
+                final_text = strip_trailing_unknown(pending.strip())
+                accepted, ok = _accept([final_text] if final_text else [], spoken, limit)
                 for sentence in accepted:
                     yield _line({"type": "sentence", "text": sentence})
                 if not ok:

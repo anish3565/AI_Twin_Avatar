@@ -40,6 +40,14 @@ def looks_like_injection(question: str) -> bool:
     return _INJECTION.search(question) is not None
 
 
+# The model sometimes adds the UNKNOWN marker after a correct answer, e.g. "...7.60.UNKNOWN".
+_TRAILING_UNKNOWN = re.compile(r"(?<=\S)\s*UNKNOWN[\s.!?]*$")
+
+
+def strip_trailing_unknown(text: str) -> str:
+    return _TRAILING_UNKNOWN.sub("", text).rstrip()
+
+
 def _normalise_url(url: str) -> str:
     return url.strip().lower().rstrip(".,;:!?)\"'").rstrip("/")
 
