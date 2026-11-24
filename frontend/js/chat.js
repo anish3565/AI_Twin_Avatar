@@ -177,11 +177,23 @@ function pickVoice() {
   voice = english.find((v) => /Google/i.test(v.name)) || english.find((v) => v.localService) || english[0] || null;
 }
 
+// Utterances that have actually started and not yet finished. The avatar's
+// mouth follows this set, so it moves with the voice, not with our guess of its length.
+const audibleUtterances = new Set();
+
 function newUtterance(chunk) {
   const utterance = new SpeechSynthesisUtterance(chunk);
   if (voice) utterance.voice = voice;
   utterance.rate = SPEECH_RATE;
+  utterance.addEventListener("start", () => audibleUtterances.add(utterance));
+  const done = () => audibleUtterances.delete(utterance);
+  utterance.addEventListener("end", done);
+  utterance.addEventListener("error", done);
   return utterance;
+}
+
+function isVoiceAudible() {
+  return audibleUtterances.size > 0;
 }
 
 function stopSpeaking() {
@@ -189,6 +201,7 @@ function stopSpeaking() {
   pendingChunks = 0;
   if (botSpeaking) speechEndedAt = performance.now();
   botSpeaking = false;
+  audibleUtterances.clear();
   if (canSpeak) speechSynthesis.cancel();
 }
 
@@ -819,7 +832,7 @@ function applyMode(mode) {
   setHistory(false);
   if (avatarMode && !avatarStarted) {
     avatarStarted = true;
-    startAvatar(() => botSpeaking);
+    startAvatar(isVoiceAudible);
   }
   if (voiceMode) {
     readAloud.checked = true;
